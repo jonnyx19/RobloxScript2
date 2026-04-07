@@ -2,7 +2,7 @@ import csv, ctypes, json, math, os, queue, random, string, sys, threading, time
 import hashlib, platform, subprocess, urllib.request, urllib.error
 from ctypes import wintypes
 from typing import Optional, Tuple
-
+from PyQt5 import QtWebEngineWidgets 
 import cv2
 import numpy as np
 import onnxruntime as ort
