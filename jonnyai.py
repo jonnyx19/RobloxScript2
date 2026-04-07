@@ -7,7 +7,14 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 import win32api, win32con, win32gui
+from PyQt5 import QtWebEngineWidgets  # must be first
 
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication
+
+QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
+
+app = QApplication([])
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import QUrl, QObject, pyqtSlot, pyqtSignal, QTimer
 from PyQt6.QtGui import QColor, QPainter, QPen
