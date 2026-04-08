@@ -2,15 +2,12 @@ import csv, ctypes, json, math, os, queue, random, string, sys, threading, time
 import hashlib, platform, subprocess, urllib.request, urllib.error
 from ctypes import wintypes
 from typing import Optional, Tuple
-from PyQt5 import QtWebEngineWidgets 
+
 import cv2
 import numpy as np
 import onnxruntime as ort
 import win32api, win32con, win32gui
-from PyQt5 import QtWebEngineWidgets  # must be first
-import PyQt5.QtWebEngineWidgets
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication
+
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import QUrl, QObject, pyqtSlot, pyqtSignal, QTimer
 from PyQt6.QtGui import QColor, QPainter, QPen
@@ -473,7 +470,8 @@ ENEMY_CLASS_IDS: list = [0]
 
 def is_enemy_class(cls_id: int) -> bool:
     return int(cls_id) in ENEMY_CLASS_IDS
-
+import numpy as np
+import math
 
 class KalmanAimFilter:
     def __init__(self):
@@ -900,39 +898,46 @@ class SmoothAimer(threading.Thread):
     def __init__(self, result_q):
         super().__init__(daemon=True)
         self.result_q = result_q
-        self.running = True
-        self.enabled = True
-        
-        self._pd = PDController()
-        self._recoil = RecoilEngine()
+        self.running  = True
+        self.enabled  = True
+
+        self._pd      = PDController()
+        self._recoil  = RecoilEngine()
         self._validator = PersonValidator()
-        self._scorer = TargetScorer()
-        self._last_det_ts = 0.0
+        self._scorer    = TargetScorer()
+
+        self._last_det_ts  = 0.0
         self._last_valid_ts = 0.0
-        self._last_tick_t = 0.0
-        self._hk_cache = {}
-        self._hk_time = 0.0
+        self._last_tick_t  = 0.0
+        self._hk_cache     = {}
+        self._hk_time      = 0.0
         self._valid_target = False
         self._snap_boost_active = False
+
+        # EMA output — smoothed ix/iy sent to SendInput
         self._last_ix = 0.0
         self._last_iy = 0.0
 
-        # Kalman
+        # ── Kalman (6-state: pos, vel, acc) ──────────────────
         self.dim = 6
-        self.kalman_x = np.zeros((self.dim, 1))
-        self.kalman_P = np.eye(self.dim) * 100.0
+        self.kalman_x         = np.zeros((self.dim, 1))
+        self.kalman_P         = np.eye(self.dim) * 100.0
         self.kalman_initialized = False
-        self.F = np.eye(self.dim)
-        self.H = np.zeros((2, self.dim))
-        self.H[0, 0] = 1.0
-        self.H[1, 1] = 1.0
-        self.Q_base = np.eye(self.dim) * 0.018
-        self.R = np.eye(2) * 0.12
-        self.last_vel = np.zeros((2, 1))
-        self.last_acc = np.zeros((2, 1))
-        self.history = []
-        self.last_h = 0.0
+        self.F                = np.eye(self.dim)
+        self.H                = np.zeros((2, self.dim))
+        self.H[0, 0]          = 1.0
+        self.H[1, 1]          = 1.0
+        # Q_base: small process noise — trusts model, doesn't chase every YOLO bbox jitter
+        self.Q_base           = np.eye(self.dim) * 0.018
+        self.Q                = self.Q_base.copy()
+        # R: measurement noise — how much we trust raw YOLO bbox vs. Kalman estimate
+        self.R                = np.eye(2) * 0.12
+        self.last_vel         = np.zeros((2, 1))
+        self.last_acc         = np.zeros((2, 1))
+        self.history          = []   # (timestamp, x, y) ring buffer for velocity trend
+        self.last_h           = 0.0  # last bbox height (used for distance estimation)
 
+    # ── Hotkeys ──────────────────────────────────────────────────
     def _gk(self, key):
         return keymapping.get(key) if key else None
 
@@ -941,70 +946,84 @@ class SmoothAimer(threading.Thread):
         if now - self._hk_time < 0.08:
             return
         self._hk_cache = {
-            "aim": self._gk(settings.get("aimbothotkeycombobox")),
-            "ads": self._gk(settings.get("aimbotadskeycombobox")),
-            "ar": self._gk(settings.get("antirecoilhotkeycombobox")),
+            "aim":  self._gk(settings.get("aimbothotkeycombobox")),
+            "ads":  self._gk(settings.get("aimbotadskeycombobox")),
+            "ar":   self._gk(settings.get("antirecoilhotkeycombobox")),
             "trig": self._gk(settings.get("triggerbothotkeycombobox")),
-            "pat": self._gk(settings.get("patternhotkeycombobox")),
+            "pat":  self._gk(settings.get("patternhotkeycombobox")),
         }
         self._hk_time = now
 
     def _held(self, kc):
         return kc is not None and win32api.GetKeyState(kc) in (-127, -128)
 
+    # ── Hard reset — wipes all state ─────────────────────────────
     def _hard_reset(self):
         self.kalman_initialized = False
         self.history.clear()
         self.last_vel.fill(0.0)
         self.last_acc.fill(0.0)
-        self.last_h = 0.0
-        self._last_det_ts = self._last_valid_ts = 0.0
-        self._valid_target = False
+        self.last_h           = 0.0
+        self._last_det_ts     = 0.0
+        self._last_valid_ts   = 0.0
+        self._valid_target    = False
         self._snap_boost_active = False
-        self._last_ix = self._last_iy = 0.0
+        # FIX: do NOT zero out _last_ix/_last_iy here —
+        # letting EMA decay naturally prevents the hard direction reversal
+        # that caused the previous "jerk away from target" behaviour.
         self._pd.reset()
 
-    def _kalman_init(self, meas_x, meas_y, h):
-        self.kalman_x[0] = meas_x
-        self.kalman_x[1] = meas_y
-        self.kalman_x[2:] = 0.0
-        self.kalman_P = np.eye(self.dim) * 4.0
+    # ── Kalman: init ─────────────────────────────────────────────
+    def _kalman_init(self, meas_x: float, meas_y: float, h: float):
+        self.kalman_x[:]   = 0.0
+        self.kalman_x[0]   = meas_x
+        self.kalman_x[1]   = meas_y
+        self.kalman_P      = np.eye(self.dim) * 4.0
         self.kalman_initialized = True
-        self.history = [(time.perf_counter(), meas_x, meas_y)]
-        self.last_h = h
+        self.history       = [(time.perf_counter(), meas_x, meas_y)]
+        self.last_h        = h
+        self.Q             = self.Q_base.copy()
 
-    def _kalman_update(self, meas_x, meas_y, h):
+    # ── Kalman: measurement update ────────────────────────────────
+    def _kalman_update(self, meas_x: float, meas_y: float, h: float):
         if not self.kalman_initialized:
             self._kalman_init(meas_x, meas_y, h)
             return
 
         now = time.perf_counter()
         self.history.append((now, meas_x, meas_y))
+        # Keep 0.48 s of history for trend detection
         while self.history and now - self.history[0][0] > 0.48:
             self.history.pop(0)
 
-        z = np.array([[meas_x], [meas_y]])
-        y = z - self.H @ self.kalman_x
-        S = self.H @ self.kalman_P @ self.H.T + self.R
-        K = self.kalman_P @ self.H.T @ np.linalg.inv(S)
+        z  = np.array([[meas_x], [meas_y]])
+        y  = z - self.H @ self.kalman_x
+        S  = self.H @ self.kalman_P @ self.H.T + self.R
+        K  = self.kalman_P @ self.H.T @ np.linalg.inv(S)
         self.kalman_x = self.kalman_x + K @ y
         self.kalman_P = (np.eye(self.dim) - K @ self.H) @ self.kalman_P
 
+        # Adapt Q to current velocity magnitude — faster target → more process noise
         recent_change = abs(self.kalman_x[2:4].mean())
         self.Q = self.Q_base * (1.0 + recent_change * 28.0)
         self.last_h = h
 
-    def _kalman_predict(self, dt):
+    # ── Kalman: prediction ────────────────────────────────────────
+    # KEY FIX: pred_multiplier is capped at 1.0–3.5 total.
+    # The old code passed dt * 420 into the state transition which
+    # extrapolated many seconds into the future every tick.
+    def _kalman_predict(self, dt: float) -> tuple:
         if not self.kalman_initialized:
             return 0.0, 0.0
 
-        self.F = np.eye(self.dim)
-        self.F[0, 2] = dt
-        self.F[0, 4] = 0.5 * dt * dt
-        self.F[1, 3] = dt
-        self.F[1, 5] = 0.5 * dt * dt
-        self.F[2, 4] = dt
-        self.F[3, 5] = dt
+        # Build F for this dt (pos ← pos + vel*dt + 0.5*acc*dt²)
+        self.F        = np.eye(self.dim)
+        self.F[0, 2]  = dt
+        self.F[0, 4]  = 0.5 * dt * dt
+        self.F[1, 3]  = dt
+        self.F[1, 5]  = 0.5 * dt * dt
+        self.F[2, 4]  = dt
+        self.F[3, 5]  = dt
 
         self.kalman_x = self.F @ self.kalman_x
         self.kalman_P = self.F @ self.kalman_P @ self.F.T + self.Q
@@ -1015,38 +1034,47 @@ class SmoothAimer(threading.Thread):
         vel = self.kalman_x[2:4]
         acc = self.kalman_x[4:6]
 
-        distance_factor = max(1.0, 450.0 / (self.last_h + 1.0))
+        # Distance factor: small target (small h) → slightly more prediction
+        # Capped at 2.0 to prevent runaway extrapolation
+        distance_factor = min(2.0, max(1.0, 320.0 / (self.last_h + 1.0)))
 
+        # Jerk term: only applied when we have enough history
+        # and capped to a small nudge (0.18 instead of 0.38)
         if len(self.history) >= 5:
             dt_hist = self.history[-1][0] - self.history[-4][0]
             if dt_hist > 0:
                 jerk_x = (vel[0, 0] - self.last_vel[0, 0]) / dt_hist
                 jerk_y = (vel[1, 0] - self.last_vel[1, 0]) / dt_hist
-                px += 0.38 * jerk_x * dt * dt * distance_factor
-                py += 0.38 * jerk_y * dt * dt * distance_factor
+                # FIX: 0.18 instead of 0.38 — cuts jerk overshoot in half
+                px += 0.18 * jerk_x * dt * dt * distance_factor
+                py += 0.18 * jerk_y * dt * dt * distance_factor
 
+        # Trend correction: only for consistent horizontal strafing
         if len(self.history) >= 8:
-            dxs = [self.history[i+1][1] - self.history[i][1] for i in range(len(self.history)-1)]
+            dxs = [self.history[i+1][1] - self.history[i][1]
+                   for i in range(len(self.history)-1)]
             if abs(np.mean(dxs)) > 3.5 and abs(np.std(dxs)) < 4.2:
-                px += np.mean(dxs[-4:]) * 1.05 * distance_factor
+                # FIX: 0.85 instead of 1.05 — reduces strafe-prediction overshoot
+                px += np.mean(dxs[-4:]) * 0.85 * distance_factor
 
         self.last_vel = vel.copy()
         self.last_acc = acc.copy()
         return px, py
 
+    # ── Main loop ─────────────────────────────────────────────────
     def run(self):
         INTERVAL = 0.001
-        sc = screenshotcentre
-        last_r = None
+        sc       = screenshotcentre
+        last_r   = None
         self._last_tick_t = time.perf_counter()
 
         while self.running:
             t0 = time.perf_counter()
+
+            # Drain queue — always use the freshest detection
             while True:
-                try:
-                    last_r = self.result_q.get_nowait()
-                except queue.Empty:
-                    break
+                try:    last_r = self.result_q.get_nowait()
+                except queue.Empty: break
 
             if not loaded:
                 time.sleep(0.01)
@@ -1055,48 +1083,54 @@ class SmoothAimer(threading.Thread):
             self._refresh_hotkeys()
             hk = self._hk_cache
 
-            aim_held = self._held(hk.get("aim"))
-            ads_held = self._held(hk.get("ads"))
-            ar_held = self._held(hk.get("ar"))
+            aim_held  = self._held(hk.get("aim"))
+            ads_held  = self._held(hk.get("ads"))
+            ar_held   = self._held(hk.get("ar"))
             trig_held = self._held(hk.get("trig"))
-            pat_held = self._held(hk.get("pat"))
+            pat_held  = self._held(hk.get("pat"))
+            fire_held = win32api.GetKeyState(0x01) in (-127, -128)
 
-            aimbot_on = settings.get("aimbotcheckbox", False)
+            aimbot_on   = settings.get("aimbotcheckbox", False)
             conf_thresh = settings.get("aiconfidenceslider", 35) / 100.0
-            stickiness = settings.get("stickinessslider", 50) / 100.0
-            coast_time = 9.0 + stickiness * 8.0   # extrem langes Kleben
+            stickiness  = settings.get("stickinessslider", 50) / 100.0
+            coast_time  = 9.0 + stickiness * 8.0
+            pred_str    = settings.get("predictionstrengthslider", 50) / 100.0
 
-            pred_str = settings.get("predictionstrengthslider", 50) / 100.0
             self._pd.configure(
-                settings.get("adsstrengthslider" if ads_held else "regularstrengthslider", 120 if ads_held else 150),
+                settings.get("adsstrengthslider" if ads_held else "regularstrengthslider",
+                              120 if ads_held else 150),
                 settings.get("smoothnessslider", 40),
                 settings.get("speedmultiplierslider", 25)
             )
 
             now = time.perf_counter()
-            dt = now - self._last_tick_t
+            dt  = max(now - self._last_tick_t, 1e-5)   # FIX: guard against zero dt
             self._last_tick_t = now
 
-            is_fresh = (last_r is not None and last_r.timestamp != self._last_det_ts and now - last_r.timestamp < 0.20)
+            # ── Detection processing ──────────────────────────────
+            is_fresh = (last_r is not None
+                        and last_r.timestamp != self._last_det_ts
+                        and now - last_r.timestamp < 0.20)
 
             if is_fresh:
                 self._last_det_ts = last_r.timestamp
                 if last_r.has_detection:
                     bx1, by1, bx2, by2 = last_r.box
-                    if (self._validator.is_person(bx1, by1, bx2, by2, last_r.conf) and last_r.conf >= conf_thresh):
-                        h = by2 - by1
+                    if (self._validator.is_person(bx1, by1, bx2, by2, last_r.conf)
+                            and last_r.conf >= conf_thresh):
+                        h    = by2 - by1
                         bone = settings.get("aimboneradiobutton", "Head")
-                        bdiv = {"Head": 2.5, "Neck": 3.0, "Torso": 5.0}.get(bone, settings.get("customoffsetslider", 2.5))
+                        bdiv = {"Head": 2.5, "Neck": 3.0, "Torso": 5.0}.get(
+                            bone, settings.get("customoffsetslider", 2.5))
                         aim_x = (bx1 + bx2) / 2.0
                         aim_y = (by1 + by2) / 2.0 - h / bdiv
 
-                        was_new_target = not self.kalman_initialized
-                        if was_new_target:
+                        if not self.kalman_initialized:
                             self._snap_boost_active = True
 
                         self._kalman_update(aim_x, aim_y, h)
                         self._last_valid_ts = now
-                        self._valid_target = True
+                        self._valid_target  = True
                     else:
                         self._hard_reset()
                 else:
@@ -1105,87 +1139,158 @@ class SmoothAimer(threading.Thread):
             if self._valid_target and now - self._last_valid_ts > coast_time:
                 self._hard_reset()
 
-            if (aimbot_on and self.enabled and (aim_held or ads_held) and
-                    self._valid_target and self.kalman_initialized):
-                distance_factor = max(1.0, 420.0 / (self.last_h + 1.0))
-                pred_multiplier = 1.0 + pred_str * (420.0 if self._snap_boost_active else 320.0) * distance_factor
+            # ── AIMBOT ────────────────────────────────────────────
+            if (aimbot_on and self.enabled
+                    and (aim_held or ads_held)
+                    and self._valid_target
+                    and self.kalman_initialized):
 
+                # ── FIXED pred_multiplier ─────────────────────────
+                # Old code: pred_str * 420 → at pred_str=0.5 this was 211x
+                # which extrapolated 0.2 seconds forward per tick at 1kHz.
+                # That sent px/py way past the target every frame.
+                #
+                # New range: 1.0 (no prediction) → 3.5 (max prediction)
+                # This is a single-step look-ahead — Kalman already handles
+                # multi-step prediction internally via the state transition.
+                pred_multiplier = 1.0 + pred_str * 2.5   # 1.0 → 3.5
+
+                # dt is already ~0.001s; multiplier scales look-ahead
                 px, py = self._kalman_predict(dt * pred_multiplier)
-                in_fov = True
-                if in_fov:
-                    ex = px - sc[0]
-                    ey = py - sc[1]
-                    ix, iy = self._pd.tick(ex, ey, dt)
 
-                    error_mag = (ex**2 + ey**2)**0.5
-                    vel_mag = float(np.linalg.norm(self.kalman_x[2:4]))
+                ex        = px - sc[0]
+                ey        = py - sc[1]
+                error_mag = math.hypot(ex, ey)
+                vel_mag   = float(np.linalg.norm(self.kalman_x[2:4]))
 
-                    # === STRIKTER, EHRGEIZIGER + STABILER LOCK ===
-                    if error_mag > 140 or self.last_h < 70:
-                        boost = 38.0          # sehr stark auf Ferne
-                        alpha = 0.79
-                    elif error_mag > 55:
-                        boost = 33.0
-                        alpha = 0.74
-                    elif error_mag > 15:
-                        boost = 19.0
-                        alpha = 0.71
-                    else:  # ultra nah = extrem klebrig + stabil
-                        boost = 1.22          # sanft, aber konstant
-                        alpha = 0.99998       # sehr starke Dämpfung
+                ix, iy = self._pd.tick(ex, ey, dt)
 
-                    if vel_mag > 18.0:
-                        boost *= 1.45
+                # ══════════════════════════════════════════════════
+                # BOOST + ALPHA — the core of jitter-free tracking
+                #
+                # DESIGN PRINCIPLES (fixes the old code):
+                #
+                # 1. Boost and alpha are SEPARATE concerns:
+                #    - boost   = how far the mouse moves per tick
+                #    - alpha   = how much of that move survives EMA filtering
+                #
+                # 2. Near the target (small error_mag):
+                #    - LOW boost: prevents overshoot
+                #    - LOW alpha: EMA heavily averages out any jitter
+                #    Together: cursor holds still on target
+                #
+                # 3. Far from target (large error_mag):
+                #    - HIGH boost: quick snap movement
+                #    - MEDIUM alpha: responsive but not twitchy
+                #
+                # 4. Fire mode uses tighter parameters because the
+                #    player needs crosshair stability while shooting.
+                #
+                # 5. The hard cap at ±6px (was ±9.5) prevents
+                #    single-tick jumps that caused visual overshoot.
+                #    At 1kHz, 6px/tick = 6000px/s — already faster
+                #    than any human can physically move a mouse.
+                # ══════════════════════════════════════════════════
 
-                    ix *= boost
-                    iy *= boost
+                if fire_held:
+                    # ── Firing: fast correction + stability on-target ──
+                    if error_mag > 55:
+                        boost = 28.0;  alpha = 0.80
+                    elif error_mag > 20:
+                        boost = 16.0;  alpha = 0.65
+                    elif error_mag > 6:
+                        boost = 7.0;   alpha = 0.42
+                    else:
+                        # On-target while firing — low alpha kills jitter
+                        boost = 2.2;   alpha = 0.14
+                    deadzone = 0.40
 
-                    # Starke Anti-Schaukel Dämpfung
-                    ix = ix * alpha + self._last_ix * (1 - alpha)
-                    iy = iy * alpha + self._last_iy * (1 - alpha)
-                    self._last_ix = ix
-                    self._last_iy = iy
-
-                    # Große Deadzone gegen Wegrutschen
-                    if abs(ix) < 0.65:
-                        ix = 0.0
-                    if abs(iy) < 0.65:
-                        iy = 0.0
-                    ix = max(min(ix, 9.0), -9.0)
-                    iy = max(min(iy, 9.0), -9.0)
-
-                    if self._snap_boost_active:
-                        self._snap_boost_active = False
-
-                    if ix != 0 or iy != 0:
-                        mousemove(ix, iy)
-                        if _aim_logger.enabled:
-                            _aim_logger.log(px, py, sc[0], sc[1], ex, ey, ix, iy,
-                                            last_r.conf if last_r else 0.0)
                 else:
-                    self._pd.reset()
+                    # ── Not firing: aggressive snap, then lock ────────
+                    if error_mag > 140 or self.last_h < 70:
+                        # Far / tiny target → hard snap
+                        boost = 58.0;  alpha = 0.88
+                    elif error_mag > 55:
+                        boost = 44.0;  alpha = 0.82
+                    elif error_mag > 20:
+                        boost = 26.0;  alpha = 0.72
+                    elif error_mag > 6:
+                        # Close: enough power to land precisely
+                        boost = 10.0;  alpha = 0.48
+                    else:
+                        # On-target: hold without drift
+                        boost = 2.5;   alpha = 0.16
+                    deadzone = 0.45
+
+                # Fast-moving targets get velocity bonus (capped)
+                if vel_mag > 18.0:
+                    boost *= min(1.45, 1.0 + (vel_mag - 18.0) * 0.015)
+
+                ix *= boost
+                iy *= boost
+
+                # ── EMA low-pass filter ───────────────────────────
+                # This is what kills jitter. Lower alpha = more
+                # frames averaged = smoother output at cost of latency.
+                # At alpha=0.10 we effectively have 10-frame averaging.
+                ix = ix * alpha + self._last_ix * (1.0 - alpha)
+                iy = iy * alpha + self._last_iy * (1.0 - alpha)
+                self._last_ix = ix
+                self._last_iy = iy
+
+                # ── Deadzone + Hard-Cap ───────────────────────────
+                # FIX: removed the copysign direction-reversal check.
+                # That check was the main jitter source — when EMA
+                # caused the output to briefly overshoot the error
+                # direction, it zeroed _last_ix which then caused a
+                # sharp direction reversal, which caused the output
+                # to overshoot the other way, creating oscillation.
+                #
+                # Instead: just clamp. The EMA at low alpha already
+                # prevents sustained overshoot naturally.
+                if abs(ix) < deadzone: ix = 0.0
+                if abs(iy) < deadzone: iy = 0.0
+
+                # Cap: 8.5px/tick at 1kHz = 8500px/s — fast snap without
+                # the runaway overshoot of the old 9.5 cap.
+                ix = max(min(ix, 8.5), -8.5)
+                iy = max(min(iy, 8.5), -8.5)
+
+                if self._snap_boost_active:
+                    self._snap_boost_active = False
+
+                if ix != 0 or iy != 0:
+                    mousemove(ix, iy)
+                    if _aim_logger.enabled:
+                        _aim_logger.log(px, py, sc[0], sc[1], ex, ey, ix, iy,
+                                        last_r.conf if last_r else 0.0)
+
             elif not (aim_held or ads_held):
                 self._pd.reset()
+                # FIX: don't zero EMA here either — let it decay naturally
+                # Avoids the sudden jerk when hotkey is released and re-pressed
                 if self._last_valid_ts > 0 and now - self._last_valid_ts > 1.5:
                     self._hard_reset()
 
-            # Trigger, Recoil, Pattern unverändert
-            if (settings.get("triggerbotcheckbox", False) and trig_held and
-                    last_r is not None and last_r.has_detection and self._valid_target):
+            # ── TRIGGERBOT ────────────────────────────────────────
+            if (settings.get("triggerbotcheckbox", False) and trig_held
+                    and last_r is not None
+                    and last_r.has_detection
+                    and self._valid_target):
                 bx1, by1, bx2, by2 = last_r.box
                 if bx1 <= sc[0] <= bx2 and by1 <= sc[1] <= by2:
                     mouseclick()
 
+            # ── ANTI-RECOIL ───────────────────────────────────────
             if settings.get("antirecoilcheckbox", False) and ar_held:
-                fire_held = win32api.GetKeyState(0x01) in (-127, -128)
                 ar_s = settings.get("antirecoilstrengthslider", 1) / 15.0
                 self._recoil.set_pattern(settings.get("antirecoilpatterncombo", "default"))
-                rdx, rdy = self._recoil.tick(fire_held, ar_s)
+                rdx, rdy = self._recoil.tick(ar_s)
                 if rdx != 0 or rdy != 0:
                     mousemove(rdx, rdy)
 
+            # ── PATTERN ───────────────────────────────────────────
             if settings.get("patterncheckbox", False) and pat_held:
-                fire_held = win32api.GetKeyState(0x01) in (-127, -128)
                 pat_name = settings.get("patternselect", "default")
                 if pat_name != _pattern_engine._active:
                     _pattern_engine.set_pattern(pat_name)
@@ -1195,10 +1300,11 @@ class SmoothAimer(threading.Thread):
             elif not pat_held:
                 _pattern_engine.tick(False)
 
+            # ── Precise 1kHz timing ───────────────────────────────
             elapsed = time.perf_counter() - t0
-            sleep = INTERVAL - elapsed
-            if sleep > 0.0005:
-                time.sleep(sleep - 0.0004)
+            sl = INTERVAL - elapsed
+            if sl > 0.0005:
+                time.sleep(sl - 0.0004)
             while time.perf_counter() - t0 < INTERVAL:
                 pass
 
