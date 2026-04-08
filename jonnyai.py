@@ -1,5 +1,11 @@
 import csv, ctypes, json, math, os, queue, random, string, sys, threading, time
 import hashlib, platform, subprocess, urllib.request, urllib.error
+try:
+    import serial
+    import serial.tools.list_ports
+    _SERIAL_AVAILABLE = True
+except ImportError:
+    _SERIAL_AVAILABLE = False
 from ctypes import wintypes
 from typing import Optional, Tuple
 
@@ -222,6 +228,216 @@ def mouseclick():
 
 def ads() -> bool:
     return win32api.GetKeyState(0x02) in (-127, -128)
+
+
+# ──────────────────────────────────────────────────────────────────
+#  HARDWARE MOUSE DRIVER
+#
+#  Supports any USB HID device that accepts serial commands to move
+#  the mouse. Auto-detects:
+#    • Arduino Leonardo / Micro / Pro Micro (ATmega32u4)
+#    • Raspberry Pi RP2040 / RP2350 / RP2400 (PicoW, etc.)
+#    • Any CH340/CP2102/FTDI serial device running compatible firmware
+#
+#  Protocol: simple ASCII -- send "M <dx> <dy>\n" over serial
+#  The Arduino/RP2 firmware should read this and call Mouse.move(dx,dy).
+#
+#  Sample Arduino firmware (upload to Leonardo/Micro):
+#    #include <Mouse.h>
+#    void setup(){Serial.begin(115200);Mouse.begin();}
+#    void loop(){
+#      if(Serial.available()){
+#        String s=Serial.readStringUntil('\n');
+#        if(s.startsWith("M ")){
+#          int sp=s.indexOf(' ',2);
+#          int dx=s.substring(2,sp).toInt();
+#          int dy=s.substring(sp+1).toInt();
+#          Mouse.move(dx,dy,0);}}
+#    }
+#
+#  Sample MicroPython firmware (for RP2040/RP2350 with USB HID):
+#    import usb_hid, sys
+#    from adafruit_hid.mouse import Mouse
+#    m=Mouse(usb_hid.devices)
+#    while True:
+#        l=sys.stdin.readline().strip()
+#        if l.startswith("M "):
+#            parts=l.split();m.move(int(parts[1]),int(parts[2]),0)
+# ──────────────────────────────────────────────────────────────────
+
+# Known Arduino/RP VID:PID combinations
+_HW_MOUSE_VIDPIDS = {
+    (0x2341, 0x8036): "Arduino Leonardo",
+    (0x2341, 0x8037): "Arduino Micro",
+    (0x1B4F, 0x9206): "SparkFun Pro Micro",
+    (0x1B4F, 0x9207): "SparkFun Pro Micro (bootloader)",
+    (0x2341, 0x0036): "Arduino Leonardo (bootloader)",
+    (0x239A, 0x8089): "Adafruit ItsyBitsy 32u4",
+    (0x2E8A, 0x0005): "RP2040 (MicroPython)",
+    (0x2E8A, 0x000A): "RP2040 (CircuitPython)",
+    (0x2E8A, 0x0009): "RP2040 (Pico W)",
+    (0x2E8A, 0x1023): "RP2350 (MicroPython)",
+    (0x2E8A, 0x102A): "RP2350 (CircuitPython)",
+    (0x2E8A, 0x1000): "RP2350/RP2400 generic",
+    (0x0403, 0x6001): "FTDI FT232 (generic)",
+    (0x1A86, 0x7523): "CH340 (generic)",
+    (0x10C4, 0xEA60): "CP2102 (generic)",
+    (0x067B, 0x2303): "PL2303 (generic)",
+}
+
+class HardwareMouseDriver:
+    """
+    Manages a serial connection to an Arduino/RP2 device.
+    Thread-safe. Falls back to Windows SendInput if not connected.
+    """
+    def __init__(self):
+        self._ser       = None
+        self._lock      = threading.Lock()
+        self._port      = None
+        self._dev_name  = "None"
+        self._connected = False
+        self._rem_x     = 0.0   # sub-pixel accumulator
+        self._rem_y     = 0.0
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    @property
+    def device_name(self) -> str:
+        return self._dev_name
+
+    @property
+    def port(self) -> str:
+        return self._port or ""
+
+    def scan_ports(self) -> list:
+        """Return list of (port, description, vid_pid_name) tuples."""
+        if not _SERIAL_AVAILABLE:
+            return []
+        results = []
+        try:
+            for p in serial.tools.list_ports.comports():
+                vid = p.vid; pid = p.pid
+                name = _HW_MOUSE_VIDPIDS.get((vid, pid), "")
+                results.append((p.device, p.description, name))
+        except Exception:
+            pass
+        return results
+
+    def auto_connect(self) -> bool:
+        """Scan and auto-connect to first known HID device."""
+        if not _SERIAL_AVAILABLE:
+            return False
+        for port, desc, name in self.scan_ports():
+            if name:  # known device
+                if self.connect(port):
+                    print(f"[HWMouse] Auto-connected to {name} on {port}")
+                    return True
+        return False
+
+    def connect(self, port: str, baud: int = 115200) -> bool:
+        """Connect to specific port."""
+        if not _SERIAL_AVAILABLE:
+            return False
+        self.disconnect()
+        try:
+            ser = serial.Serial(port, baud, timeout=0.05)
+            import time as _t; _t.sleep(0.2)  # let Arduino reset
+            ser.reset_input_buffer()
+            self._ser       = ser
+            self._port      = port
+            self._connected = True
+            # Try to detect device name from port info
+            for p in serial.tools.list_ports.comports():
+                if p.device == port:
+                    self._dev_name = _HW_MOUSE_VIDPIDS.get(
+                        (p.vid, p.pid), p.description or "Unknown")
+                    break
+            return True
+        except Exception as e:
+            print(f"[HWMouse] Connect failed: {e}")
+            self._connected = False
+            return False
+
+    def disconnect(self):
+        with self._lock:
+            if self._ser:
+                try: self._ser.close()
+                except: pass
+            self._ser = None
+            self._connected = False
+            self._port = None
+            self._dev_name = "None"
+
+    def move(self, dx: float, dy: float):
+        """
+        Send mouse move command over serial.
+        Handles sub-pixel accumulation so small moves aren't lost.
+        Clamps to [-127,127] per HID report limit.
+        """
+        self._rem_x += dx
+        self._rem_y += dy
+        ix = int(self._rem_x)
+        iy = int(self._rem_y)
+        if ix == 0 and iy == 0:
+            return
+        self._rem_x -= ix
+        self._rem_y -= iy
+        # HID mouse reports are signed bytes: clamp to [-127,127]
+        # If move is larger, send multiple packets
+        while ix != 0 or iy != 0:
+            cx = max(-127, min(127, ix))
+            cy = max(-127, min(127, iy))
+            self._send_packet(cx, cy)
+            ix -= cx
+            iy -= cy
+
+    def _send_packet(self, dx: int, dy: int):
+        if not self._connected or self._ser is None:
+            return
+        cmd = (f"M {dx} {dy}" + "\n").encode()
+        with self._lock:
+            try:
+                self._ser.write(cmd)
+            except Exception as e:
+                print(f"[HWMouse] Write error: {e}")
+                self._connected = False
+
+    def click(self):
+        """Send left-click."""
+        if not self._connected or self._ser is None:
+            return
+        with self._lock:
+            try:
+                self._ser.write(b"C\n")
+            except Exception:
+                self._connected = False
+
+
+# Global hardware mouse driver instance
+_hw_mouse = HardwareMouseDriver()
+
+# ── Mouse output routing ─────────────────────────────────────────
+# When hardware driver is connected → all aimbot moves go through it.
+# When not connected → Windows SendInput (existing behavior).
+_USE_HW_MOUSE = False  # set True when user enables HW mouse in settings
+
+def mousemove_routed(dx: float, dy: float):
+    """Route mouse movement to hardware driver OR Windows SendInput."""
+    if _USE_HW_MOUSE and _hw_mouse.connected:
+        _hw_mouse.move(dx, dy)
+    else:
+        # Windows SendInput (original)
+        mousemove(int(dx), int(dy))
+
+def mouseclick_routed():
+    """Route click to hardware driver OR Windows SendInput."""
+    if _USE_HW_MOUSE and _hw_mouse.connected:
+        _hw_mouse.click()
+    else:
+        mouseclick()
+
 
 class SettingsStore:
     _defaults = {
@@ -470,47 +686,37 @@ ENEMY_CLASS_IDS: list = [0]
 
 def is_enemy_class(cls_id: int) -> bool:
     return int(cls_id) in ENEMY_CLASS_IDS
-import numpy as np
-import math
 
 class KalmanAimFilter:
     def __init__(self):
         self.F = np.array([[1,0,1,0],[0,1,0,1],[0,0,1,0],[0,0,0,1]], dtype=np.float64)
         self.H = np.array([[1,0,0,0],[0,1,0,0]], dtype=np.float64)
-        q = 13.5                                     # nah am Original, aber stabiler bei schnellen Moves
-        self.Q = np.diag([q, q, q*2.4, q*2.4]).astype(np.float64)
-        r = 2.9                                      # höher = filtert Noise besser → kein Schwanken mehr
+        q = 15.0
+        self.Q = np.diag([q, q, q*3, q*3]).astype(np.float64)
+        r = 2.0
         self.R = np.diag([r, r]).astype(np.float64)
-        self.P = np.eye(4, dtype=np.float64) * 155.0
+        self.P = np.eye(4, dtype=np.float64) * 200.0
         self.x = np.zeros((4,1), dtype=np.float64)
         self._initialized = False
-        self._vel_damping = 0.97                     # leichte Dämpfung genau für schnelle Bewegungen
 
     def reset(self):
         self.x[:] = 0
-        self.P = np.eye(4, dtype=np.float64) * 155.0
+        self.P = np.eye(4, dtype=np.float64) * 200.0
         self._initialized = False
 
     def init(self, px: float, py: float):
-        self.x[0,0] = px
-        self.x[1,0] = py
-        self.x[2,0] = 0.0
-        self.x[3,0] = 0.0
-        self.P = np.eye(4, dtype=np.float64) * 26.0
+        self.x[0,0]=px; self.x[1,0]=py; self.x[2,0]=0.0; self.x[3,0]=0.0
+        self.P = np.eye(4, dtype=np.float64) * 30.0
         self._initialized = True
 
     def predict(self, dt: float) -> tuple:
         if not self._initialized:
             return (float(self.x[0,0]), float(self.x[1,0]))
-        
+        # Clamp dt: prevent runaway extrapolation on lag spikes or high pred slider
         dt = max(0.0, min(dt, 0.08))
-        self.F[0,2] = dt
-        self.F[1,3] = dt
+        self.F[0,2]=dt; self.F[1,3]=dt
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
-        
-        self.x[2:4] *= self._vel_damping
-        
         return (float(self.x[0,0]), float(self.x[1,0]))
 
     def update(self, px: float, py: float) -> tuple:
@@ -518,7 +724,6 @@ class KalmanAimFilter:
         if not self._initialized:
             self.init(px, py)
             return (px, py)
-        
         y = z - self.H @ self.x
         S = self.H @ self.P @ self.H.T + self.R
         K = self.P @ self.H.T @ np.linalg.inv(S)
@@ -540,7 +745,7 @@ class KalmanAimFilter:
 
 
 class PDController:
-    STOP_THRESHOLD = 0.8
+    STOP_THRESHOLD = 1.0
 
     def __init__(self):
         self.kp = 1.5
@@ -560,11 +765,11 @@ class PDController:
         self._smx     = self._smy     = 0.0
 
     def configure(self, strength: float, smoothness: float, speed_px: float):
-        t = strength / 272.0
-        self.kp = 1.0 + t * 4.4                      # stärker und schneller aufs Ziel
-        self.kd = 0.025 + t * 0.052
+        t = strength / 300.0
+        self.kp = 1.0 + t * 3.0
+        self.kd = 0.03 + t * 0.04
         s = max(0.0, min(100.0, smoothness)) / 100.0
-        self._alpha = 0.86 - s * 0.39                # mehr Glätte = konstant und scharf, kein Schwanken
+        self._alpha = 0.95 - s * 0.60
         self._max_px = speed_px / max(get_sens_scale(), 0.5)
 
     def tick(self, ex: float, ey: float, dt: float) -> tuple:
@@ -572,38 +777,24 @@ class PDController:
         if dist < self.STOP_THRESHOLD:
             self.reset()
             return (0, 0)
-        
         dex = (ex - self._last_ex) / max(dt, 1e-4)
         dey = (ey - self._last_ey) / max(dt, 1e-4)
-        self._last_ex = ex
-        self._last_ey = ey
-        
+        self._last_ex = ex; self._last_ey = ey
         raw_x = (self.kp * ex + self.kd * dex) / 1000.0
         raw_y = (self.kp * ey + self.kd * dey) / 1000.0
-        
         mag = math.hypot(raw_x, raw_y)
         if mag > self._max_px:
             raw_x = raw_x / mag * self._max_px
             raw_y = raw_y / mag * self._max_px
-        
-        if dist < 14.0:
-            feather = dist / 14.0
-            raw_x *= feather
-            raw_y *= feather
-        
-        self._smx = self._smx * (1 - self._alpha) + raw_x * self._alpha
-        self._smy = self._smy * (1 - self._alpha) + raw_y * self._alpha
-        
+        if dist < 8.0:
+            feather = dist / 8.0
+            raw_x *= feather; raw_y *= feather
+        self._smx += self._alpha * (raw_x - self._smx)
+        self._smy += self._alpha * (raw_y - self._smy)
         self._rem_x += self._smx
         self._rem_y += self._smy
-        ix = int(self._rem_x)
-        iy = int(self._rem_y)
-        self._rem_x -= ix
-        self._rem_y -= iy
-        
-        ix = max(min(ix, 10.2), -10.2)
-        iy = max(min(iy, 10.2), -10.2)
-        
+        ix = int(self._rem_x); iy = int(self._rem_y)
+        self._rem_x -= ix; self._rem_y -= iy
         return (ix, iy)
 
 
@@ -780,6 +971,19 @@ DEFAULT_RECOIL_PATTERNS = {
 }
 
 class RecoilEngine:
+    """
+    Anti-recoil engine — applies downward compensation while LMB is held.
+
+    Key fixes vs old version:
+    - Uses a continuous sub-pixel accumulator (same as PDController)
+      so fractional moves aren't silently dropped each tick.
+    - Strength slider (1-15) maps directly to pixels-per-shot-interval.
+    - Pattern advances on a real-time interval clock, not a frame counter,
+      so it works correctly regardless of the aimer loop speed.
+    - No longer depends on the patternspeed/patternscale sliders — those
+      belong to the Pattern tab only.
+    - Fires only when LMB (0x01) is physically held — checked inside tick().
+    """
     _SHOT_INTERVAL = 0.1   # advance one pattern step every 100ms
 
     def __init__(self):
@@ -894,50 +1098,45 @@ class PatternEngine:
         return (int(round(dx*s)),int(round(dy*s)))
 
 _pattern_engine = PatternEngine()
+
+
 class SmoothAimer(threading.Thread):
     def __init__(self, result_q):
         super().__init__(daemon=True)
         self.result_q = result_q
-        self.running  = True
-        self.enabled  = True
-
-        self._pd      = PDController()
-        self._recoil  = RecoilEngine()
+        self.running = True
+        self.enabled = True
+        
+        self._pd = PDController()
+        self._recoil = RecoilEngine()
         self._validator = PersonValidator()
-        self._scorer    = TargetScorer()
-
-        self._last_det_ts  = 0.0
+        self._scorer = TargetScorer()
+        self._last_det_ts = 0.0
         self._last_valid_ts = 0.0
-        self._last_tick_t  = 0.0
-        self._hk_cache     = {}
-        self._hk_time      = 0.0
+        self._last_tick_t = 0.0
+        self._hk_cache = {}
+        self._hk_time = 0.0
         self._valid_target = False
         self._snap_boost_active = False
-
-        # EMA output — smoothed ix/iy sent to SendInput
         self._last_ix = 0.0
         self._last_iy = 0.0
 
-        # ── Kalman (6-state: pos, vel, acc) ──────────────────
+        # Kalman
         self.dim = 6
-        self.kalman_x         = np.zeros((self.dim, 1))
-        self.kalman_P         = np.eye(self.dim) * 100.0
+        self.kalman_x = np.zeros((self.dim, 1))
+        self.kalman_P = np.eye(self.dim) * 100.0
         self.kalman_initialized = False
-        self.F                = np.eye(self.dim)
-        self.H                = np.zeros((2, self.dim))
-        self.H[0, 0]          = 1.0
-        self.H[1, 1]          = 1.0
-        # Q_base: small process noise — trusts model, doesn't chase every YOLO bbox jitter
-        self.Q_base           = np.eye(self.dim) * 0.018
-        self.Q                = self.Q_base.copy()
-        # R: measurement noise — how much we trust raw YOLO bbox vs. Kalman estimate
-        self.R                = np.eye(2) * 0.12
-        self.last_vel         = np.zeros((2, 1))
-        self.last_acc         = np.zeros((2, 1))
-        self.history          = []   # (timestamp, x, y) ring buffer for velocity trend
-        self.last_h           = 0.0  # last bbox height (used for distance estimation)
+        self.F = np.eye(self.dim)
+        self.H = np.zeros((2, self.dim))
+        self.H[0, 0] = 1.0
+        self.H[1, 1] = 1.0
+        self.Q_base = np.eye(self.dim) * 0.018
+        self.R = np.eye(2) * 0.12
+        self.last_vel = np.zeros((2, 1))
+        self.last_acc = np.zeros((2, 1))
+        self.history = []
+        self.last_h = 0.0
 
-    # ── Hotkeys ──────────────────────────────────────────────────
     def _gk(self, key):
         return keymapping.get(key) if key else None
 
@@ -946,84 +1145,70 @@ class SmoothAimer(threading.Thread):
         if now - self._hk_time < 0.08:
             return
         self._hk_cache = {
-            "aim":  self._gk(settings.get("aimbothotkeycombobox")),
-            "ads":  self._gk(settings.get("aimbotadskeycombobox")),
-            "ar":   self._gk(settings.get("antirecoilhotkeycombobox")),
+            "aim": self._gk(settings.get("aimbothotkeycombobox")),
+            "ads": self._gk(settings.get("aimbotadskeycombobox")),
+            "ar": self._gk(settings.get("antirecoilhotkeycombobox")),
             "trig": self._gk(settings.get("triggerbothotkeycombobox")),
-            "pat":  self._gk(settings.get("patternhotkeycombobox")),
+            "pat": self._gk(settings.get("patternhotkeycombobox")),
         }
         self._hk_time = now
 
     def _held(self, kc):
         return kc is not None and win32api.GetKeyState(kc) in (-127, -128)
 
-    # ── Hard reset — wipes all state ─────────────────────────────
     def _hard_reset(self):
         self.kalman_initialized = False
         self.history.clear()
         self.last_vel.fill(0.0)
         self.last_acc.fill(0.0)
-        self.last_h           = 0.0
-        self._last_det_ts     = 0.0
-        self._last_valid_ts   = 0.0
-        self._valid_target    = False
+        self.last_h = 0.0
+        self._last_det_ts = self._last_valid_ts = 0.0
+        self._valid_target = False
         self._snap_boost_active = False
-        # FIX: do NOT zero out _last_ix/_last_iy here —
-        # letting EMA decay naturally prevents the hard direction reversal
-        # that caused the previous "jerk away from target" behaviour.
+        self._last_ix = self._last_iy = 0.0
         self._pd.reset()
 
-    # ── Kalman: init ─────────────────────────────────────────────
-    def _kalman_init(self, meas_x: float, meas_y: float, h: float):
-        self.kalman_x[:]   = 0.0
-        self.kalman_x[0]   = meas_x
-        self.kalman_x[1]   = meas_y
-        self.kalman_P      = np.eye(self.dim) * 4.0
+    def _kalman_init(self, meas_x, meas_y, h):
+        self.kalman_x[0] = meas_x
+        self.kalman_x[1] = meas_y
+        self.kalman_x[2:] = 0.0
+        self.kalman_P = np.eye(self.dim) * 4.0
         self.kalman_initialized = True
-        self.history       = [(time.perf_counter(), meas_x, meas_y)]
-        self.last_h        = h
-        self.Q             = self.Q_base.copy()
+        self.history = [(time.perf_counter(), meas_x, meas_y)]
+        self.last_h = h
 
-    # ── Kalman: measurement update ────────────────────────────────
-    def _kalman_update(self, meas_x: float, meas_y: float, h: float):
+    def _kalman_update(self, meas_x, meas_y, h):
         if not self.kalman_initialized:
             self._kalman_init(meas_x, meas_y, h)
             return
 
         now = time.perf_counter()
         self.history.append((now, meas_x, meas_y))
-        # Keep 0.48 s of history for trend detection
         while self.history and now - self.history[0][0] > 0.48:
             self.history.pop(0)
 
-        z  = np.array([[meas_x], [meas_y]])
-        y  = z - self.H @ self.kalman_x
-        S  = self.H @ self.kalman_P @ self.H.T + self.R
-        K  = self.kalman_P @ self.H.T @ np.linalg.inv(S)
+        z = np.array([[meas_x], [meas_y]])
+        y = z - self.H @ self.kalman_x
+        S = self.H @ self.kalman_P @ self.H.T + self.R
+        K = self.kalman_P @ self.H.T @ np.linalg.inv(S)
         self.kalman_x = self.kalman_x + K @ y
         self.kalman_P = (np.eye(self.dim) - K @ self.H) @ self.kalman_P
 
-        # Adapt Q to current velocity magnitude — faster target → more process noise
         recent_change = abs(self.kalman_x[2:4].mean())
         self.Q = self.Q_base * (1.0 + recent_change * 28.0)
         self.last_h = h
 
-    # ── Kalman: prediction ────────────────────────────────────────
-    # KEY FIX: pred_multiplier is capped at 1.0–3.5 total.
-    # The old code passed dt * 420 into the state transition which
-    # extrapolated many seconds into the future every tick.
-    def _kalman_predict(self, dt: float) -> tuple:
+    def _kalman_predict(self, dt):
         if not self.kalman_initialized:
             return 0.0, 0.0
 
-        # Build F for this dt (pos ← pos + vel*dt + 0.5*acc*dt²)
-        self.F        = np.eye(self.dim)
-        self.F[0, 2]  = dt
-        self.F[0, 4]  = 0.5 * dt * dt
-        self.F[1, 3]  = dt
-        self.F[1, 5]  = 0.5 * dt * dt
-        self.F[2, 4]  = dt
-        self.F[3, 5]  = dt
+        self.F = np.eye(self.dim)
+        self.F[0, 2] = dt
+        self.F[0, 4] = 0.5 * dt * dt
+        self.F[1, 3] = dt
+        self.F[1, 5] = 0.5 * dt * dt
+        self.F[2, 4] = dt
+        self.F[3, 5] = dt
 
         self.kalman_x = self.F @ self.kalman_x
         self.kalman_P = self.F @ self.kalman_P @ self.F.T + self.Q
@@ -1034,47 +1219,38 @@ class SmoothAimer(threading.Thread):
         vel = self.kalman_x[2:4]
         acc = self.kalman_x[4:6]
 
-        # Distance factor: small target (small h) → slightly more prediction
-        # Capped at 2.0 to prevent runaway extrapolation
-        distance_factor = min(2.0, max(1.0, 320.0 / (self.last_h + 1.0)))
+        distance_factor = max(1.0, 450.0 / (self.last_h + 1.0))
 
-        # Jerk term: only applied when we have enough history
-        # and capped to a small nudge (0.18 instead of 0.38)
         if len(self.history) >= 5:
             dt_hist = self.history[-1][0] - self.history[-4][0]
             if dt_hist > 0:
                 jerk_x = (vel[0, 0] - self.last_vel[0, 0]) / dt_hist
                 jerk_y = (vel[1, 0] - self.last_vel[1, 0]) / dt_hist
-                # FIX: 0.18 instead of 0.38 — cuts jerk overshoot in half
-                px += 0.18 * jerk_x * dt * dt * distance_factor
-                py += 0.18 * jerk_y * dt * dt * distance_factor
+                px += 0.38 * jerk_x * dt * dt * distance_factor
+                py += 0.38 * jerk_y * dt * dt * distance_factor
 
-        # Trend correction: only for consistent horizontal strafing
         if len(self.history) >= 8:
-            dxs = [self.history[i+1][1] - self.history[i][1]
-                   for i in range(len(self.history)-1)]
+            dxs = [self.history[i+1][1] - self.history[i][1] for i in range(len(self.history)-1)]
             if abs(np.mean(dxs)) > 3.5 and abs(np.std(dxs)) < 4.2:
-                # FIX: 0.85 instead of 1.05 — reduces strafe-prediction overshoot
-                px += np.mean(dxs[-4:]) * 0.85 * distance_factor
+                px += np.mean(dxs[-4:]) * 1.05 * distance_factor
 
         self.last_vel = vel.copy()
         self.last_acc = acc.copy()
         return px, py
 
-    # ── Main loop ─────────────────────────────────────────────────
     def run(self):
         INTERVAL = 0.001
-        sc       = screenshotcentre
-        last_r   = None
+        sc = screenshotcentre
+        last_r = None
         self._last_tick_t = time.perf_counter()
 
         while self.running:
             t0 = time.perf_counter()
-
-            # Drain queue — always use the freshest detection
             while True:
-                try:    last_r = self.result_q.get_nowait()
-                except queue.Empty: break
+                try:
+                    last_r = self.result_q.get_nowait()
+                except queue.Empty:
+                    break
 
             if not loaded:
                 time.sleep(0.01)
@@ -1083,54 +1259,48 @@ class SmoothAimer(threading.Thread):
             self._refresh_hotkeys()
             hk = self._hk_cache
 
-            aim_held  = self._held(hk.get("aim"))
-            ads_held  = self._held(hk.get("ads"))
-            ar_held   = self._held(hk.get("ar"))
+            aim_held = self._held(hk.get("aim"))
+            ads_held = self._held(hk.get("ads"))
+            ar_held = self._held(hk.get("ar"))
             trig_held = self._held(hk.get("trig"))
-            pat_held  = self._held(hk.get("pat"))
-            fire_held = win32api.GetKeyState(0x01) in (-127, -128)
+            pat_held = self._held(hk.get("pat"))
 
-            aimbot_on   = settings.get("aimbotcheckbox", False)
+            aimbot_on = settings.get("aimbotcheckbox", False)
             conf_thresh = settings.get("aiconfidenceslider", 35) / 100.0
-            stickiness  = settings.get("stickinessslider", 50) / 100.0
-            coast_time  = 9.0 + stickiness * 8.0
-            pred_str    = settings.get("predictionstrengthslider", 50) / 100.0
+            stickiness = settings.get("stickinessslider", 50) / 100.0
+            coast_time = 9.0 + stickiness * 8.0   # extrem langes Kleben
 
+            pred_str = settings.get("predictionstrengthslider", 50) / 100.0
             self._pd.configure(
-                settings.get("adsstrengthslider" if ads_held else "regularstrengthslider",
-                              120 if ads_held else 150),
+                settings.get("adsstrengthslider" if ads_held else "regularstrengthslider", 120 if ads_held else 150),
                 settings.get("smoothnessslider", 40),
                 settings.get("speedmultiplierslider", 25)
             )
 
             now = time.perf_counter()
-            dt  = max(now - self._last_tick_t, 1e-5)   # FIX: guard against zero dt
+            dt = now - self._last_tick_t
             self._last_tick_t = now
 
-            # ── Detection processing ──────────────────────────────
-            is_fresh = (last_r is not None
-                        and last_r.timestamp != self._last_det_ts
-                        and now - last_r.timestamp < 0.20)
+            is_fresh = (last_r is not None and last_r.timestamp != self._last_det_ts and now - last_r.timestamp < 0.20)
 
             if is_fresh:
                 self._last_det_ts = last_r.timestamp
                 if last_r.has_detection:
                     bx1, by1, bx2, by2 = last_r.box
-                    if (self._validator.is_person(bx1, by1, bx2, by2, last_r.conf)
-                            and last_r.conf >= conf_thresh):
-                        h    = by2 - by1
+                    if (self._validator.is_person(bx1, by1, bx2, by2, last_r.conf) and last_r.conf >= conf_thresh):
+                        h = by2 - by1
                         bone = settings.get("aimboneradiobutton", "Head")
-                        bdiv = {"Head": 2.5, "Neck": 3.0, "Torso": 5.0}.get(
-                            bone, settings.get("customoffsetslider", 2.5))
+                        bdiv = {"Head": 2.5, "Neck": 3.0, "Torso": 5.0}.get(bone, settings.get("customoffsetslider", 2.5))
                         aim_x = (bx1 + bx2) / 2.0
                         aim_y = (by1 + by2) / 2.0 - h / bdiv
 
-                        if not self.kalman_initialized:
+                        was_new_target = not self.kalman_initialized
+                        if was_new_target:
                             self._snap_boost_active = True
 
                         self._kalman_update(aim_x, aim_y, h)
                         self._last_valid_ts = now
-                        self._valid_target  = True
+                        self._valid_target = True
                     else:
                         self._hard_reset()
                 else:
@@ -1139,158 +1309,87 @@ class SmoothAimer(threading.Thread):
             if self._valid_target and now - self._last_valid_ts > coast_time:
                 self._hard_reset()
 
-            # ── AIMBOT ────────────────────────────────────────────
-            if (aimbot_on and self.enabled
-                    and (aim_held or ads_held)
-                    and self._valid_target
-                    and self.kalman_initialized):
+            if (aimbot_on and self.enabled and (aim_held or ads_held) and
+                    self._valid_target and self.kalman_initialized):
+                distance_factor = max(1.0, 420.0 / (self.last_h + 1.0))
+                pred_multiplier = 1.0 + pred_str * (420.0 if self._snap_boost_active else 320.0) * distance_factor
 
-                # ── FIXED pred_multiplier ─────────────────────────
-                # Old code: pred_str * 420 → at pred_str=0.5 this was 211x
-                # which extrapolated 0.2 seconds forward per tick at 1kHz.
-                # That sent px/py way past the target every frame.
-                #
-                # New range: 1.0 (no prediction) → 3.5 (max prediction)
-                # This is a single-step look-ahead — Kalman already handles
-                # multi-step prediction internally via the state transition.
-                pred_multiplier = 1.0 + pred_str * 2.5   # 1.0 → 3.5
-
-                # dt is already ~0.001s; multiplier scales look-ahead
                 px, py = self._kalman_predict(dt * pred_multiplier)
+                in_fov = True
+                if in_fov:
+                    ex = px - sc[0]
+                    ey = py - sc[1]
+                    ix, iy = self._pd.tick(ex, ey, dt)
 
-                ex        = px - sc[0]
-                ey        = py - sc[1]
-                error_mag = math.hypot(ex, ey)
-                vel_mag   = float(np.linalg.norm(self.kalman_x[2:4]))
+                    error_mag = (ex**2 + ey**2)**0.5
+                    vel_mag = float(np.linalg.norm(self.kalman_x[2:4]))
 
-                ix, iy = self._pd.tick(ex, ey, dt)
-
-                # ══════════════════════════════════════════════════
-                # BOOST + ALPHA — the core of jitter-free tracking
-                #
-                # DESIGN PRINCIPLES (fixes the old code):
-                #
-                # 1. Boost and alpha are SEPARATE concerns:
-                #    - boost   = how far the mouse moves per tick
-                #    - alpha   = how much of that move survives EMA filtering
-                #
-                # 2. Near the target (small error_mag):
-                #    - LOW boost: prevents overshoot
-                #    - LOW alpha: EMA heavily averages out any jitter
-                #    Together: cursor holds still on target
-                #
-                # 3. Far from target (large error_mag):
-                #    - HIGH boost: quick snap movement
-                #    - MEDIUM alpha: responsive but not twitchy
-                #
-                # 4. Fire mode uses tighter parameters because the
-                #    player needs crosshair stability while shooting.
-                #
-                # 5. The hard cap at ±6px (was ±9.5) prevents
-                #    single-tick jumps that caused visual overshoot.
-                #    At 1kHz, 6px/tick = 6000px/s — already faster
-                #    than any human can physically move a mouse.
-                # ══════════════════════════════════════════════════
-
-                if fire_held:
-                    # ── Firing: fast correction + stability on-target ──
-                    if error_mag > 55:
-                        boost = 28.0;  alpha = 0.80
-                    elif error_mag > 20:
-                        boost = 16.0;  alpha = 0.65
-                    elif error_mag > 6:
-                        boost = 7.0;   alpha = 0.42
-                    else:
-                        # On-target while firing — low alpha kills jitter
-                        boost = 2.2;   alpha = 0.14
-                    deadzone = 0.40
-
-                else:
-                    # ── Not firing: aggressive snap, then lock ────────
+                    # === STRIKTER, EHRGEIZIGER + STABILER LOCK ===
                     if error_mag > 140 or self.last_h < 70:
-                        # Far / tiny target → hard snap
-                        boost = 58.0;  alpha = 0.88
+                        boost = 38.0          # sehr stark auf Ferne
+                        alpha = 0.79
                     elif error_mag > 55:
-                        boost = 44.0;  alpha = 0.82
-                    elif error_mag > 20:
-                        boost = 26.0;  alpha = 0.72
-                    elif error_mag > 6:
-                        # Close: enough power to land precisely
-                        boost = 10.0;  alpha = 0.48
-                    else:
-                        # On-target: hold without drift
-                        boost = 2.5;   alpha = 0.16
-                    deadzone = 0.45
+                        boost = 33.0
+                        alpha = 0.74
+                    elif error_mag > 15:
+                        boost = 19.0
+                        alpha = 0.71
+                    else:  # ultra nah = extrem klebrig + stabil
+                        boost = 1.22          # sanft, aber konstant
+                        alpha = 0.99998       # sehr starke Dämpfung
 
-                # Fast-moving targets get velocity bonus (capped)
-                if vel_mag > 18.0:
-                    boost *= min(1.45, 1.0 + (vel_mag - 18.0) * 0.015)
+                    if vel_mag > 18.0:
+                        boost *= 1.45
 
-                ix *= boost
-                iy *= boost
+                    ix *= boost
+                    iy *= boost
 
-                # ── EMA low-pass filter ───────────────────────────
-                # This is what kills jitter. Lower alpha = more
-                # frames averaged = smoother output at cost of latency.
-                # At alpha=0.10 we effectively have 10-frame averaging.
-                ix = ix * alpha + self._last_ix * (1.0 - alpha)
-                iy = iy * alpha + self._last_iy * (1.0 - alpha)
-                self._last_ix = ix
-                self._last_iy = iy
+                    # Starke Anti-Schaukel Dämpfung
+                    ix = ix * alpha + self._last_ix * (1 - alpha)
+                    iy = iy * alpha + self._last_iy * (1 - alpha)
+                    self._last_ix = ix
+                    self._last_iy = iy
 
-                # ── Deadzone + Hard-Cap ───────────────────────────
-                # FIX: removed the copysign direction-reversal check.
-                # That check was the main jitter source — when EMA
-                # caused the output to briefly overshoot the error
-                # direction, it zeroed _last_ix which then caused a
-                # sharp direction reversal, which caused the output
-                # to overshoot the other way, creating oscillation.
-                #
-                # Instead: just clamp. The EMA at low alpha already
-                # prevents sustained overshoot naturally.
-                if abs(ix) < deadzone: ix = 0.0
-                if abs(iy) < deadzone: iy = 0.0
+                    # Große Deadzone gegen Wegrutschen
+                    if abs(ix) < 0.65:
+                        ix = 0.0
+                    if abs(iy) < 0.65:
+                        iy = 0.0
+                    ix = max(min(ix, 9.0), -9.0)
+                    iy = max(min(iy, 9.0), -9.0)
 
-                # Cap: 8.5px/tick at 1kHz = 8500px/s — fast snap without
-                # the runaway overshoot of the old 9.5 cap.
-                ix = max(min(ix, 8.5), -8.5)
-                iy = max(min(iy, 8.5), -8.5)
+                    if self._snap_boost_active:
+                        self._snap_boost_active = False
 
-                if self._snap_boost_active:
-                    self._snap_boost_active = False
-
-                if ix != 0 or iy != 0:
-                    mousemove(ix, iy)
-                    if _aim_logger.enabled:
-                        _aim_logger.log(px, py, sc[0], sc[1], ex, ey, ix, iy,
-                                        last_r.conf if last_r else 0.0)
-
+                    if ix != 0 or iy != 0:
+                        mousemove(ix, iy)
+                        if _aim_logger.enabled:
+                            _aim_logger.log(px, py, sc[0], sc[1], ex, ey, ix, iy,
+                                            last_r.conf if last_r else 0.0)
+                else:
+                    self._pd.reset()
             elif not (aim_held or ads_held):
                 self._pd.reset()
-                # FIX: don't zero EMA here either — let it decay naturally
-                # Avoids the sudden jerk when hotkey is released and re-pressed
                 if self._last_valid_ts > 0 and now - self._last_valid_ts > 1.5:
                     self._hard_reset()
 
-            # ── TRIGGERBOT ────────────────────────────────────────
-            if (settings.get("triggerbotcheckbox", False) and trig_held
-                    and last_r is not None
-                    and last_r.has_detection
-                    and self._valid_target):
+            # Trigger, Recoil, Pattern unverändert
+            if (settings.get("triggerbotcheckbox", False) and trig_held and
+                    last_r is not None and last_r.has_detection and self._valid_target):
                 bx1, by1, bx2, by2 = last_r.box
                 if bx1 <= sc[0] <= bx2 and by1 <= sc[1] <= by2:
                     mouseclick()
 
-            # ── ANTI-RECOIL ───────────────────────────────────────
             if settings.get("antirecoilcheckbox", False) and ar_held:
+                fire_held = win32api.GetKeyState(0x01) in (-127, -128)
                 ar_s = settings.get("antirecoilstrengthslider", 1) / 15.0
                 self._recoil.set_pattern(settings.get("antirecoilpatterncombo", "default"))
-                rdx, rdy = self._recoil.tick(ar_s)
+                rdx, rdy = self._recoil.tick(fire_held, ar_s)
                 if rdx != 0 or rdy != 0:
                     mousemove(rdx, rdy)
 
-            # ── PATTERN ───────────────────────────────────────────
             if settings.get("patterncheckbox", False) and pat_held:
+                fire_held = win32api.GetKeyState(0x01) in (-127, -128)
                 pat_name = settings.get("patternselect", "default")
                 if pat_name != _pattern_engine._active:
                     _pattern_engine.set_pattern(pat_name)
@@ -1300,17 +1399,15 @@ class SmoothAimer(threading.Thread):
             elif not pat_held:
                 _pattern_engine.tick(False)
 
-            # ── Precise 1kHz timing ───────────────────────────────
             elapsed = time.perf_counter() - t0
-            sl = INTERVAL - elapsed
-            if sl > 0.0005:
-                time.sleep(sl - 0.0004)
+            sleep = INTERVAL - elapsed
+            if sleep > 0.0005:
+                time.sleep(sleep - 0.0004)
             while time.perf_counter() - t0 < INTERVAL:
                 pass
 
     def stop(self):
         self.running = False
-
 class Visuals(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1331,20 +1428,16 @@ class Visuals(QMainWindow):
         Xoff=int(MONITOR_WIDTH/2-FRAME_WIDTH); Yoff=int(MONITOR_HEIGHT/2-FRAME_HEIGHT)
         hmx=MONITOR_WIDTH//2; hmy=MONITOR_HEIGHT//2
         painter=QPainter(self); painter.setOpacity(1)
-
         def qc(key,default=(255,255,255)):
             v=settings.get(key)
             if v and isinstance(v,(list,tuple)) and len(v)>=3:
                 try: return QColor(*[int(c) for c in v[:3]])
                 except: pass
             return QColor(*default)
-
         def chk(key,default=False): return settings.get(key,default)
-
         if chk("drawframesquarecheckbox"):
             painter.setPen(QPen(QtCore.Qt.GlobalColor.white,1))
             painter.drawRect(hmx-FRAME_SIZE//2,hmy-FRAME_SIZE//2,FRAME_SIZE,FRAME_SIZE)
-
         if chk("drawfovcirclecheckbox"):
             fov_r=settings.get("adsfovslider" if ads() else "regularfovslider",80)
             col=qc("fovcirclecolorpicker",(255,255,255))
@@ -1360,11 +1453,9 @@ class Visuals(QMainWindow):
             painter.setRenderHint(QPainter.RenderHint.Antialiasing,False)
             painter.setPen(QPen(col,1))
             painter.drawLine(hmx-sz,hmy,hmx+sz,hmy); painter.drawLine(hmx,hmy-sz,hmx,hmy+sz)
-
         bone=settings.get("aimboneradiobutton","Head")
         bdiv={"Head":2.5,"Neck":3.0,"Torso":5.0}.get(bone,settings.get("customoffsetslider",2))
         draw_boxes=chk("drawtargetboxescheckbox"); draw_tracers=chk("drawtargettracerscheckbox")
-
         for det in self.detectionresults:
             x1,y1,x2,y2=det["bbox"]
             if draw_boxes:
@@ -1395,15 +1486,12 @@ class Visuals(QMainWindow):
                     painter.drawLine(spx,spy,epx,epy)
                 painter.setPen(QPen(col,1)); painter.drawLine(spx,spy,epx,epy)
         painter.end()
-
-
 class PreviewWindow(QMainWindow):
     def __init__(self, result_q):
         super().__init__()
         self._result_q  = result_q
         self._last_frame: 'np.ndarray | None' = None
         self._last_det   = None
-
         WIN_W, WIN_H = FRAME_SIZE, FRAME_SIZE   # match capture size
         self.setWindowTitle("JONNY AI — Preview")
         self.setFixedSize(WIN_W, WIN_H)
@@ -1412,50 +1500,35 @@ class PreviewWindow(QMainWindow):
             | QtCore.Qt.WindowType.Tool
         )
         self.setStyleSheet("QMainWindow{background:#000;}")
-        # Central widget for painting
         self._canvas = _PreviewCanvas(self)
         self.setCentralWidget(self._canvas)
-
-        # Update at ~30 fps
         self._timer = QTimer()
         self._timer.timeout.connect(self._refresh)
         self._timer.start(33)
-
     def set_frame(self, frame):
-        """Called from mainloop with latest raw frame (BGR np array)."""
         self._last_frame = frame
-
     def set_detection(self, det):
         self._last_det = det
-
     def _refresh(self):
         self._canvas.frame     = self._last_frame
         self._canvas.detection = self._last_det
         self._canvas.update()
-
     def closeEvent(self, e):
         self._timer.stop()
         e.accept()
-
-
 class _PreviewCanvas(QWidget):
-    """Inner widget that actually paints frame + detections."""
     def __init__(self, parent):
         super().__init__(parent)
         self.frame     = None
         self.detection = None
-
     def paintEvent(self, event):
         from PyQt6.QtGui import QImage, QPixmap
         p = QPainter(self)
         W, H = self.width(), self.height()
-
-        # ── Draw raw camera frame ────────────────────────────────
         if self.frame is not None:
             try:
                 frm = self.frame
                 fh, fw = frm.shape[:2]
-                # Convert BGR→RGB for Qt
                 rgb = frm[:, :, ::-1].copy()
                 img = QImage(rgb.data, fw, fh, fw * 3, QImage.Format.Format_RGB888)
                 pix = QPixmap.fromImage(img).scaled(
@@ -1470,10 +1543,7 @@ class _PreviewCanvas(QWidget):
             p.fillRect(0, 0, W, H, QColor(10, 10, 14))
             p.setPen(QPen(QColor(80, 80, 90), 1))
             p.drawText(W // 2 - 60, H // 2, "Waiting for frame…")
-
         cx, cy = W // 2, H // 2
-
-        # ── Crosshair ───────────────────────────────────────────
         if settings.get("drawcrosshaircheckbox", True):
             sz  = settings.get("crosshairsizeslider", 6)
             col = self._qcol("crosshaircolorpicker")
@@ -1481,8 +1551,6 @@ class _PreviewCanvas(QWidget):
             p.setPen(QPen(col, 1))
             p.drawLine(cx - sz, cy, cx + sz, cy)
             p.drawLine(cx, cy - sz, cx, cy + sz)
-
-        # ── FOV circle ──────────────────────────────────────────
         if settings.get("drawfovcirclecheckbox", True):
             fov_r_raw = settings.get("adsfovslider" if ads() else "regularfovslider", 80)
             # Scale from FRAME_SIZE coordinate space to canvas pixel space
@@ -1495,12 +1563,9 @@ class _PreviewCanvas(QWidget):
                 p.drawEllipse(cx - fov_r, cy - fov_r, fov_r * 2, fov_r * 2)
             p.setPen(QPen(col, 1))
             p.drawEllipse(cx - fov_r, cy - fov_r, fov_r * 2, fov_r * 2)
-
-        # ── Detection boxes & aimpoint ──────────────────────────
         det = self.detection
         if (det is not None and det.has_detection
                 and time.perf_counter() - det.timestamp < 0.15):
-            # Detection coords are in FRAME_SIZE space — scale to canvas
             sf = W / FRAME_SIZE
             x1 = int(det.box[0] * sf); y1 = int(det.box[1] * sf)
             x2 = int(det.box[2] * sf); y2 = int(det.box[3] * sf)
@@ -1509,7 +1574,6 @@ class _PreviewCanvas(QWidget):
                 bone, settings.get("customoffsetslider", 2.5))
             aim_x = int((x1 + x2) / 2)
             aim_y = int((y1 + y2) / 2 - (y2 - y1) / bdiv)
-
             if settings.get("drawtargetboxescheckbox", True):
                 col   = self._qcol("targetboxescolorpicker")
                 btype = settings.get("targetboxestyperadiobutton", "Regular Box")
@@ -1519,7 +1583,6 @@ class _PreviewCanvas(QWidget):
                     self._draw_box(p, x1, y1, x2, y2, btype)
                 p.setPen(QPen(col, 1))
                 self._draw_box(p, x1, y1, x2, y2, btype)
-
             if settings.get("drawtargettracerscheckbox", False):
                 col  = self._qcol("targettracerscolorpicker")
                 p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -1528,20 +1591,14 @@ class _PreviewCanvas(QWidget):
                     p.drawLine(cx, cy, aim_x, aim_y)
                 p.setPen(QPen(col, 1))
                 p.drawLine(cx, cy, aim_x, aim_y)
-
-            # Draw bright aim-point dot
             p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             p.setPen(QPen(QColor(255, 80, 80), 2))
             p.setBrush(QColor(255, 80, 80, 180))
             p.drawEllipse(aim_x - 4, aim_y - 4, 8, 8)
             p.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-
-            # Confidence label
             p.setPen(QPen(QColor(255, 255, 255, 180), 1))
             p.drawText(x1 + 2, y1 - 4, f"{det.conf * 100:.0f}%")
-
         p.end()
-
     def _draw_box(self, p, x1, y1, x2, y2, btype):
         if btype == "Regular Box":
             p.drawRect(x1, y1, x2 - x1, y2 - y1)
@@ -1553,7 +1610,6 @@ class _PreviewCanvas(QWidget):
             ]:
                 p.drawLine(ax, ay, ax + sx * cl, ay)
                 p.drawLine(ax, ay, ax, ay + sy * cl)
-
     @staticmethod
     def _qcol(key, default=(255, 255, 255)):
         v = settings.get(key)
@@ -1561,21 +1617,52 @@ class _PreviewCanvas(QWidget):
             try: return QColor(*[int(c) for c in v[:3]])
             except: pass
         return QColor(*default)
-
-
 class Bridge(QObject):
     statsUpdated      = pyqtSignal(str)
     modelListUpdated  = pyqtSignal(str)
     configListUpdated = pyqtSignal(str)
     toastMessage      = pyqtSignal(str,str)
-
     def __init__(self,overlay:Visuals,aimer:SmoothAimer,frame_q,result_q):
         super().__init__()
         self.overlay=overlay; self.aimer=aimer
         self.frame_q=frame_q; self.result_q=result_q
         self._main_window   = None
         self._preview_win   = None
-
+    @pyqtSlot(result=str)
+    def hwMouseScanPorts(self):
+        ports = _hw_mouse.scan_ports()
+        result = [{"port": p, "desc": d, "name": n} for p,d,n in ports]
+        return json.dumps(result)
+    @pyqtSlot(str, result=str)
+    def hwMouseConnect(self, port: str):
+        global _USE_HW_MOUSE
+        if port == "auto":
+            ok = _hw_mouse.auto_connect()
+        else:
+            ok = _hw_mouse.connect(port)
+        if ok:
+            _USE_HW_MOUSE = True
+            self.toastMessage.emit(
+                f"HW Mouse: {_hw_mouse.device_name} on {_hw_mouse.port}", "success")
+        else:
+            self.toastMessage.emit("HW Mouse: connection failed", "error")
+        return json.dumps({"ok": ok, "device": _hw_mouse.device_name,
+                           "port": _hw_mouse.port})
+    @pyqtSlot()
+    def hwMouseDisconnect(self):
+        global _USE_HW_MOUSE
+        _hw_mouse.disconnect()
+        _USE_HW_MOUSE = False
+        self.toastMessage.emit("HW Mouse: disconnected, using SendInput", "info")
+    @pyqtSlot(result=str)
+    def hwMouseStatus(self):
+        return json.dumps({
+            "connected": _hw_mouse.connected,
+            "device":    _hw_mouse.device_name,
+            "port":      _hw_mouse.port,
+            "active":    _USE_HW_MOUSE,
+            "serial_ok": _SERIAL_AVAILABLE,
+        })
     @pyqtSlot()
     def togglePreview(self):
         """Open or close the capture preview window."""
@@ -1587,11 +1674,9 @@ class Bridge(QObject):
         else:
             self._preview_win.hide()
             self.toastMessage.emit("Preview window closed","info")
-
     @pyqtSlot(str,result=str)
     def getSetting(self,key):
         return json.dumps(settings.get(key))
-
     @pyqtSlot(str,str)
     def setSetting(self,key,value):
         try:
@@ -1613,18 +1698,15 @@ class Bridge(QObject):
                 except: pass
         except Exception as e:
             print(f"[Bridge] setSetting error: {e}")
-
     @pyqtSlot(result=str)
     def getAllSettings(self):
         return json.dumps(settings.get_all())
-
     @pyqtSlot(result=str)
     def getModelList(self):
         cwd=os.getcwd()
         models=sorted([f for f in os.listdir(cwd)
                         if f.lower().endswith(".onnx") and os.path.isfile(os.path.join(cwd,f))])
         return json.dumps(models if models else ["best.onnx"])
-
     @pyqtSlot(str)
     def loadModel(self,model_filename):
         global loaded,session
@@ -1634,22 +1716,6 @@ class Bridge(QObject):
         self.toastMessage.emit(f"Loading {model_filename}...","info")
         loaded=False
         def _do_load():
-            """
-            Two-phase loading strategy to avoid freezing with TensorRT:
-
-            Phase 1 (fast, ~1-3s): Load with CUDA or CPU → set loaded=True
-                                   so the program starts immediately.
-            Phase 2 (background):  If TRT is available, compile the TRT engine
-                                   (can take 30-120s on first run) in a
-                                   separate thread and hot-swap the session
-                                   when done — zero disruption to the running
-                                   aimbot.
-
-            This means:
-            - Program starts fast regardless of TRT compilation time.
-            - After TRT engine is built, it auto-upgrades to TRT+CUDA.
-            - On subsequent runs the TRT cache is reused (seconds).
-            """
             global loaded,session,_active_provider
             import io as _io
 
@@ -1663,7 +1729,6 @@ class Bridge(QObject):
                 finally:
                     sys.stderr=old
                 return s
-
             try:
                 # ── Suppress DLL spam during preload ──
                 old_err=sys.stderr; sys.stderr=_io.StringIO()
@@ -1689,16 +1754,11 @@ class Bridge(QObject):
                 phase1_sess = None
                 phase1_name = "CPU"
                 load_err    = ""
-
-                # ── PHASE 1: Quick start via CUDA ──────────────────────────
-                # If TRT cache already exists for this model → load TRT directly
-                # (cached TRT loads in ~2s, same as CUDA)
                 trt_cache_file = os.path.join("./trt_cache",
                     os.path.basename(model_path).replace(".onnx","") + "_fp16.engine")
                 trt_cached = os.path.isfile(trt_cache_file)
 
                 if trt_available and trt_cached:
-                    # Cache hit — load TRT immediately, it's fast
                     print("[ORT] TRT engine cache found — loading directly")
                     self.toastMessage.emit(f"Loading {model_filename} via TRT cache…","info")
                     try:
@@ -1723,8 +1783,6 @@ class Bridge(QObject):
                     except Exception as e:
                         load_err=f"TRT cache load failed: {e}"
                         print(f"[ORT] {load_err}")
-
-                # If no TRT cache or TRT cache load failed → use CUDA for Phase 1
                 if phase1_sess is None and cuda_available:
                     self.toastMessage.emit(f"Loading {model_filename} via CUDA…","info")
                     try:
@@ -1742,7 +1800,6 @@ class Bridge(QObject):
                         load_err+=f"|CUDA: {e}"
                         print(f"[ORT] CUDA Phase1 failed: {e}")
 
-                # DirectML fallback (AMD/Intel)
                 if phase1_sess is None and "DmlExecutionProvider" in avail:
                     self.toastMessage.emit(f"Loading {model_filename} via DirectML…","info")
                     try:
@@ -1754,7 +1811,6 @@ class Bridge(QObject):
                     except Exception as e:
                         load_err+=f"|DML: {e}"
 
-                # ROCm fallback
                 if phase1_sess is None and "ROCMExecutionProvider" in avail:
                     try:
                         s=_silent_make(["ROCMExecutionProvider","CPUExecutionProvider"])
@@ -1763,14 +1819,12 @@ class Bridge(QObject):
                     except Exception as e:
                         load_err+=f"|ROCm: {e}"
 
-                # CPU last resort
                 if phase1_sess is None:
                     self.toastMessage.emit(f"Loading {model_filename} via CPU…","info")
                     phase1_sess=_silent_make(["CPUExecutionProvider"])
                     phase1_name="CPU"
                     print("[ORT] Phase1: CPU (no GPU available)")
 
-                # ── Activate Phase 1 session — program starts NOW ──
                 _active_provider=phase1_name
                 session=phase1_sess
                 loaded=True
@@ -1784,8 +1838,6 @@ class Bridge(QObject):
                     hint+=" NVIDIA: pip install onnxruntime-gpu | AMD: pip install onnxruntime-directml"
                     self.toastMessage.emit(hint,"info")
 
-                # ── PHASE 2: TRT background compilation ───────────────────
-                # Only run if TRT is available AND we didn't already use it
                 if trt_available and "TensorRT" not in phase1_name:
                     def _compile_trt():
                         global session,_active_provider
@@ -1903,8 +1955,14 @@ class Bridge(QObject):
 
     @pyqtSlot()
     def closeWindow(self):
-        w = getattr(self, '_main_window', None)
-        if w is not None: w.hide()
+  
+        try:
+            _aim_logger.stop()
+        except Exception:
+            pass
+        QApplication.quit()
+        import os as _os
+        _os.kill(_os.getpid(), 9)
 
     def set_main_window(self, win):
         self._main_window = win
@@ -1928,18 +1986,14 @@ class Bridge(QObject):
 
 GUI_W=720; GUI_H=460
 
-# ──────────────────────────────────────────────────────────────────
-#  KEY WINDOW — shown before the main GUI, blocks until auth passes
-# ──────────────────────────────────────────────────────────────────
 class KeyWindow(QMainWindow):
-    """Standalone login/key-entry window. Closes itself on success."""
 
     auth_success = pyqtSignal()
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("JONNY AI — Activation")
-        self.setFixedSize(380, 240)
+        self.setFixedSize(380, 280)
         self.setWindowFlags(
             QtCore.Qt.WindowType.FramelessWindowHint
             | QtCore.Qt.WindowType.WindowStaysOnTopHint
@@ -1966,7 +2020,7 @@ class KeyWindow(QMainWindow):
         self._web.setHtml(self._build_html(), QUrl("about:blank"))
 
         screen = QApplication.primaryScreen().geometry()
-        self.move(screen.width()//2 - 190, screen.height()//2 - 120)
+        self.move(screen.width()//2 - 190, screen.height()//2 - 140)
 
     def _build_html(self) -> str:
         return f"""<!DOCTYPE html>
@@ -1976,83 +2030,77 @@ class KeyWindow(QMainWindow):
 <style>
 *{{margin:0;padding:0;box-sizing:border-box;}}
 body{{
-  width:380px;height:240px;overflow:hidden;
+  width:380px;height:280px;overflow:hidden;
   background:#0e0e11;
   font-family:'Inter',system-ui,sans-serif;color:#f0f0f5;
   display:flex;flex-direction:column;
   user-select:none;
 }}
-/* ── TITLEBAR ── */
+canvas#stars{{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:0.5;}}
 .tb{{
-  height:34px;background:#0e0e11;display:flex;align-items:center;
-  padding:0 12px;border-bottom:1px solid rgba(255,255,255,0.06);
-  cursor:grab;flex-shrink:0;
+  position:relative;z-index:1;
+  height:34px;background:transparent;display:flex;align-items:center;
+  padding:0 12px;cursor:grab;flex-shrink:0;
 }}
 .tb:active{{cursor:grabbing;}}
-.logo{{
-  font-size:14px;font-weight:900;color:#fff;letter-spacing:-0.04em;
-  text-shadow:0 0 14px rgba(255,255,255,0.45);
-}}
-.tb-x{{
-  margin-left:auto;width:20px;height:20px;border-radius:4px;
-  border:none;background:transparent;cursor:pointer;
-  font-size:9px;color:#505060;display:flex;align-items:center;
-  justify-content:center;transition:.12s;
-}}
+.logo{{font-size:14px;font-weight:900;color:#fff;letter-spacing:-0.04em;
+  text-shadow:0 0 14px rgba(255,255,255,0.45);}}
+.tb-x{{margin-left:auto;width:20px;height:20px;border-radius:4px;
+  border:none;background:transparent;cursor:pointer;font-size:9px;
+  color:#505060;display:flex;align-items:center;justify-content:center;
+  transition:.12s;}}
 .tb-x:hover{{background:rgba(255,68,85,0.15);color:#ff4455;}}
-/* ── BODY ── */
 .body{{
+  position:relative;z-index:1;
   flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;padding:20px 32px;gap:14px;
+  justify-content:center;padding:14px 32px;gap:12px;
 }}
-/* ── INPUT ── */
 .key-inp{{
-  width:100%;padding:12px 14px;
-  background:#1a1a20;border:1px solid rgba(255,255,255,0.08);
+  width:100%;padding:11px 14px;
+  background:rgba(26,26,32,0.9);border:1px solid rgba(255,255,255,0.08);
   border-radius:8px;color:#fff;font-size:13px;font-weight:600;
   outline:none;font-family:'Courier New',mono;letter-spacing:0.06em;
   transition:border-color .15s;text-align:center;
 }}
 .key-inp:focus{{border-color:rgba(255,255,255,0.22);}}
-.key-inp.err{{
-  border-color:rgba(255,68,85,0.55);
-  animation:shake .28s ease;
-}}
+.key-inp.err{{border-color:rgba(255,68,85,0.55);animation:shake .28s ease;}}
 .key-inp.ok{{border-color:rgba(61,255,128,0.45);}}
 @keyframes shake{{
   0%,100%{{transform:translateX(0)}}
   20%{{transform:translateX(-5px)}}
   60%{{transform:translateX(5px)}}
 }}
-/* ── BUTTON ── */
 .btn{{
-  width:100%;padding:12px;border-radius:8px;border:none;
+  width:100%;padding:11px;border-radius:8px;border:none;
   background:#fff;color:#0e0e11;font-size:13px;font-weight:800;
   cursor:pointer;transition:all .14s;letter-spacing:-0.01em;
 }}
 .btn:hover{{background:#e8e8e8;transform:translateY(-1px);}}
 .btn:active{{transform:scale(.97);}}
 .btn:disabled{{background:#22222c;color:#505060;cursor:not-allowed;transform:none;}}
-/* ── STATUS ── */
-.status{{
-  font-size:10.5px;font-weight:600;min-height:14px;
-  text-align:center;color:#505060;
-  transition:color .15s,opacity .15s;
-}}
+.status{{font-size:10.5px;font-weight:600;min-height:14px;
+  text-align:center;color:#505060;transition:color .15s;}}
 .status.err{{color:#ff4455;}}
 .status.ok{{color:#3dff80;}}
-/* ── SUCCESS OVERLAY (login animation) ── */
+/* Discord button */
+.disc-btn{{
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  padding:7px 14px;border-radius:7px;width:100%;
+  background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);
+  cursor:pointer;transition:background .14s;
+}}
+.disc-btn:hover{{background:rgba(255,255,255,0.13);}}
+.disc-btn svg{{width:14px;height:14px;color:#fff;fill:currentColor;}}
+.disc-lbl{{font-size:11px;font-weight:700;color:#fff;}}
+/* Success overlay */
 .success-overlay{{
-  position:fixed;inset:0;
-  display:flex;align-items:center;justify-content:center;
-  background:#0e0e11;
-  opacity:0;pointer-events:none;
-  transition:opacity .25s ease;
-  flex-direction:column;gap:12px;z-index:99;
+  position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:#0e0e11;opacity:0;pointer-events:none;
+  transition:opacity .25s ease;flex-direction:column;gap:12px;z-index:99;
 }}
 .success-overlay.show{{opacity:1;pointer-events:all;}}
 .check-wrap{{
-  width:56px;height:56px;border-radius:50%;
+  width:52px;height:52px;border-radius:50%;
   border:2px solid rgba(61,255,128,0.25);
   display:flex;align-items:center;justify-content:center;
   animation:pulse-ring 1.2s ease infinite;
@@ -2062,26 +2110,16 @@ body{{
   70%{{box-shadow:0 0 0 12px rgba(61,255,128,0);}}
   100%{{box-shadow:0 0 0 0 rgba(61,255,128,0);}}
 }}
-.check-icon{{
-  font-size:22px;color:#3dff80;
-  animation:pop-in .35s cubic-bezier(.34,1.56,.64,1) .1s both;
-}}
-@keyframes pop-in{{
-  from{{transform:scale(0);opacity:0;}}
-  to{{transform:scale(1);opacity:1;}}
-}}
-.success-lbl{{
-  font-size:11px;font-weight:700;color:#3dff80;
-  letter-spacing:0.04em;opacity:0;
-  animation:fade-up .3s ease .4s both;
-}}
-@keyframes fade-up{{
-  from{{opacity:0;transform:translateY(4px);}}
-  to{{opacity:1;transform:none;}}
-}}
+.check-icon{{font-size:20px;color:#3dff80;
+  animation:pop-in .35s cubic-bezier(.34,1.56,.64,1) .1s both;}}
+@keyframes pop-in{{from{{transform:scale(0);opacity:0;}}to{{transform:scale(1);opacity:1;}}}}
+.success-lbl{{font-size:11px;font-weight:700;color:#3dff80;
+  letter-spacing:0.04em;opacity:0;animation:fade-up .3s ease .4s both;}}
+@keyframes fade-up{{from{{opacity:0;transform:translateY(4px);}}to{{opacity:1;transform:none;}}}}
 </style>
 </head>
 <body>
+<canvas id="stars"></canvas>
 <div class="tb" id="drag">
   <span class="logo">JNY</span>
   <button class="tb-x" onclick="if(kb)kb.close()">✕</button>
@@ -2092,15 +2130,52 @@ body{{
     onkeydown="if(event.key==='Enter')submit()">
   <button class="btn" id="sbtn" onclick="submit()">ACTIVATE</button>
   <div class="status" id="stat"></div>
-</div>
-<!-- Success animation overlay -->
-<div class="success-overlay" id="sov">
-  <div class="check-wrap">
-    <span class="check-icon">✓</span>
+  <div class="disc-btn" onclick="openDisc()">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.013.043.031.056a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+    </svg>
+    <span class="disc-lbl">Discord</span>
   </div>
+</div>
+<div class="success-overlay" id="sov">
+  <div class="check-wrap"><span class="check-icon">✓</span></div>
   <div class="success-lbl">ACTIVATED</div>
 </div>
 <script>
+// ── Stars ──
+(function(){{
+  const cv=document.getElementById('stars');
+  cv.width=380;cv.height=280;
+  const ctx=cv.getContext('2d');
+  const pts=Array.from({{length:70}},()=>{{
+    const f=Math.random()<0.3;
+    return{{x:Math.random()*380,y:Math.random()*280,r:f?(Math.random()*2+0.8):(Math.random()*1+0.3),
+      a:Math.random()*0.4+0.1,sp:Math.random()*0.2+0.03,dr:Math.random()*0.08-0.04,
+      ph:Math.random()*Math.PI*2,ps:Math.random()*0.015+0.003,flake:f}};
+  }});
+  function df(ctx,x,y,r,a){{
+    ctx.save();ctx.translate(x,y);ctx.globalAlpha=a;ctx.strokeStyle='#fff';ctx.lineWidth=r*0.35;
+    for(let i=0;i<6;i++){{ctx.save();ctx.rotate(i*Math.PI/3);ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-r*2.5);ctx.stroke();ctx.restore();}}
+    ctx.restore();
+  }}
+  function frame(){{
+    ctx.clearRect(0,0,380,280);
+    for(const p of pts){{
+      p.ph+=p.ps;const a=p.a*(0.65+0.35*Math.sin(p.ph));
+      if(p.flake){{df(ctx,p.x,p.y,p.r,a);}}
+      else{{
+        if(p.r>0.7){{const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r*3);g.addColorStop(0,'rgba(255,255,255,'+a*0.3+')');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,p.r*3,0,Math.PI*2);ctx.fill();}}
+        ctx.globalAlpha=a;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+      }}
+      p.y+=p.sp;p.x+=p.dr;
+      if(p.y>285){{p.y=-5;p.x=Math.random()*380;}}
+      if(p.x<-5)p.x=385;if(p.x>385)p.x=-5;
+    }}
+    requestAnimationFrame(frame);
+  }}
+  frame();
+}})();
+
 let kb=null;
 let _drag=false,_dx=0,_dy=0;
 document.getElementById('drag').addEventListener('mousedown',e=>{{
@@ -2114,37 +2189,21 @@ document.addEventListener('mousemove',e=>{{
 }});
 document.addEventListener('mouseup',()=>{{_drag=false;}});
 
-new QWebChannel(qt.webChannelTransport,ch=>{{
-  kb=ch.objects.kb;
-}});
+new QWebChannel(qt.webChannelTransport,ch=>{{kb=ch.objects.kb;}});
 
-function setStat(msg,cls){{
-  const el=document.getElementById('stat');
-  el.textContent=msg;el.className='status '+(cls||'');
-}}
-function setInp(cls){{
-  document.getElementById('kinp').className='key-inp '+(cls||'');
-}}
-function showSuccess(){{
-  document.getElementById('sov').classList.add('show');
-  setTimeout(()=>{{if(kb)kb.proceed();}},1400);
-}}
+function setStat(m,c){{const e=document.getElementById('stat');e.textContent=m;e.className='status '+(c||'');}}
+function setInp(c){{document.getElementById('kinp').className='key-inp '+(c||'');}}
+function showSuccess(){{document.getElementById('sov').classList.add('show');setTimeout(()=>{{if(kb)kb.proceed();}},1400);}}
+function openDisc(){{if(kb)kb.openDiscord();}}
 function submit(){{
   const key=document.getElementById('kinp').value.trim();
   if(!key){{setInp('err');setStat('Enter your license key','err');return;}}
   const btn=document.getElementById('sbtn');
-  btn.disabled=true;btn.textContent='Checking…';
-  setStat('','');setInp('');
+  btn.disabled=true;btn.textContent='Checking…';setStat('','');setInp('');
   kb.activate(key,r=>{{
-    const d=JSON.parse(r);
-    btn.disabled=false;btn.textContent='ACTIVATE';
-    if(d.ok){{
-      setInp('ok');
-      showSuccess();
-    }}else{{
-      setInp('err');
-      setStat(d.message||'Invalid key','err');
-    }}
+    const d=JSON.parse(r);btn.disabled=false;btn.textContent='ACTIVATE';
+    if(d.ok){{setInp('ok');showSuccess();}}
+    else{{setInp('err');setStat(d.message||'Invalid key','err');}}
   }});
 }}
 </script>
@@ -2178,6 +2237,11 @@ class _KeyBridge(QObject):
     @pyqtSlot()
     def close(self):
         QApplication.quit()
+
+    @pyqtSlot()
+    def openDiscord(self):
+        import webbrowser
+        webbrowser.open("https://discord.gg/jN9q5ceYYp")
 
     @pyqtSlot(result=str)
     def tryAutoLogin(self):
@@ -2853,6 +2917,18 @@ input[type=text]::placeholder{{color:var(--txt3);}}
     <div class="sw-row" onclick="swClick('streamproofcheckbox',event)"><span class="sw-label">Streamproof GUI</span><div class="sw-track"><input type="checkbox" id="sw-streamproofcheckbox"><div class="sw-knob"></div></div></div>
     <button class="btn" style="width:100%;" onclick="if(bridge)bridge.hideConsole()">Hide Console</button>
   </div></div>
+  <div class="card"><div class="ch" onclick="tog(this)">Hardware Mouse<span class="cv">▼</span></div><div class="cb">
+    <div style="font-size:10.5px;color:var(--txt2);font-family:var(--mono);padding:3px 0;">Arduino Leonardo, RP2040/RP2350/RP2400 — routes all mouse moves through USB HID device. Bypasses Windows input hooks.</div>
+    <div style="display:flex;gap:5px;">
+      <select id="hw-port-sel" style="flex:1;"></select>
+      <button class="btn sm" onclick="hwScan()">↺</button>
+    </div>
+    <div style="display:flex;gap:5px;">
+      <button class="btn ok" style="flex:1;" onclick="hwConnect()">Connect</button>
+      <button class="btn danger" style="flex:1;" onclick="hwDisconnect()">Disconnect</button>
+    </div>
+    <div style="font-size:10.5px;color:var(--txt2);font-family:var(--mono);padding:3px 0;" id="hw-status">Status: checking…</div>
+  </div></div>
 </div>
 
     </div>
@@ -3125,6 +3201,7 @@ function nav(id,btn){{
   if(id==='misc')setTimeout(()=>{{
     const h=document.getElementById('cap-mode-hint');
     if(h&&bridge)bridge.getStats(j=>{{const s=JSON.parse(j);if(h)h.textContent='Capture: '+s.capture;}});
+    hwScan();hwUpdateStatus();
   }},100);
 }}
 function tog(hdr){{hdr.classList.toggle('cls');hdr.nextElementSibling.classList.toggle('hide');}}
@@ -3171,6 +3248,57 @@ function togglePreviewWindow(e){{
   if(inp)inp.checked=_previewOpen;
   if(knob){{_previewOpen?knob.classList.add('sw-on'):knob.classList.remove('sw-on');}}
   if(bridge)bridge.togglePreview();
+}}
+
+// ── HARDWARE MOUSE ────────────────────────────────────────────
+function hwScan(){{
+  if(!bridge)return;
+  bridge.hwMouseScanPorts(j=>{{
+    const ports=JSON.parse(j);
+    const sel=document.getElementById('hw-port-sel');
+    if(!sel)return;
+    sel.innerHTML='<option value="auto">Auto-detect</option>';
+    ports.forEach(p=>{{
+      const o=document.createElement('option');
+      o.value=p.port;
+      o.textContent=p.name?`${{p.port}} — ${{p.name}}`:`${{p.port}} (${{p.desc}})`;
+      sel.appendChild(o);
+    }});
+    if(ports.length===0){{
+      const o=document.createElement('option');o.value='';o.textContent='No devices found';
+      sel.appendChild(o);
+    }}
+    hwUpdateStatus();
+  }});
+}}
+function hwConnect(){{
+  if(!bridge)return;
+  const sel=document.getElementById('hw-port-sel');
+  const port=sel?sel.value:'auto';
+  bridge.hwMouseConnect(port,j=>{{
+    const d=JSON.parse(j);
+    hwUpdateStatus();
+  }});
+}}
+function hwDisconnect(){{if(bridge)bridge.hwMouseDisconnect();setTimeout(hwUpdateStatus,300);}}
+function hwUpdateStatus(){{
+  if(!bridge)return;
+  bridge.hwMouseStatus(j=>{{
+    const d=JSON.parse(j);
+    const el=document.getElementById('hw-status');
+    if(!el)return;
+    if(!d.serial_ok){{el.textContent='Status: pyserial not installed (pip install pyserial)';return;}}
+    if(d.connected&&d.active){{
+      el.textContent=`Status: ✓ Active — ${{d.device}} on ${{d.port}}`;
+      el.style.color='var(--grn)';
+    }}else if(d.connected){{
+      el.textContent=`Status: Connected (inactive) — ${{d.device}}`;
+      el.style.color='var(--txt2)';
+    }}else{{
+      el.textContent='Status: Not connected — using Windows SendInput';
+      el.style.color='var(--txt3)';
+    }}
+  }});
 }}
 
 // ── DISCORD ───────────────────────────────────────────────────
@@ -3297,7 +3425,6 @@ def main():
             silent_ok = True
 
     if silent_ok:
-        # Jump straight into aimbot — no key window shown at all
         _start_aimbot(app, None)
     else:
         # Show key entry window
@@ -3315,10 +3442,7 @@ def main():
 
 
 def _start_aimbot(app: QApplication, key_win):
-    """Called after successful key validation. Launches the full aimbot."""
-
     overlay = Visuals(); overlay.show()
-
     frame_q  = queue.Queue(maxsize=2)
     result_q = queue.Queue(maxsize=2)
     capturer = ScreenCapture(frame_q)
